@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>An Oma senden</title>
+<style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 600px; margin: auto; }
+    input, textarea, button { width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 10px; border: 1px solid #ccc; box-sizing: border-box; }
+    button { background: #2196f3; color: white; font-weight: bold; border: none; cursor: pointer; }
+    button:active { transform: scale(0.98); }
+    .hidden { display: none; }
+</style>
+</head>
+<body>
+
+    <h2>👵 Nachricht an Oma</h2>
+
+    <div id="setupBox">
+        <input id="topic" placeholder="Kanal Name (Muss gleich sein wie bei Oma!)">
+        <input id="pass" type="password" placeholder="Passwort (Muss gleich sein!)">
+        <button onclick="saveConf()">Speichern</button>
+    </div>
+
+    <div id="sendBox" class="hidden">
+        <input id="senderName" placeholder="Dein Name (z.B. Max)">
+        <textarea id="msgText" rows="4" placeholder="Nachricht schreiben..."></textarea>
+        
+        <label style="display:block; margin-bottom:10px; font-weight:bold;">
+            📷 Foto (Optional):
+            <input type="file" id="fileInput" accept="image/*" style="margin-top:5px;">
+        </label>
+
+        <button onclick="send()" id="btnSend">Absenden 🚀</button>
+        <div id="status" style="margin-top:10px; text-align:center;"></div>
+        <br><br>
+        <button onclick="clearConf()" style="background:#666; font-size:12px;">Einstellungen zurücksetzen</button>
+    </div>
+
+<script>
+    // --- CRYPTO LOGIC (GLEICH WIE EMPFÄNGER) ---
+    const enc = new TextEncoder();
+    async function getKey(password, salt) {
+        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+        return window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    }
+    
+    // Base64 Converter Helper
+    function bufferToBase64(buffer) {
+        return new Promise((resolve) => {
+            const blob = new Blob([buffer]);
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    async function encryptText(text, password) {
+        const salt = window.crypto.getRandomValues(new Uint8Array(16));
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const key = await getKey(password, salt);
+        const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(text));
+        
+        const buffer = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
+        buffer.set(salt, 0); buffer.set(iv, 16); buffer.set(new Uint8Array(encrypted), 28);
+        return await bufferToBase64(buffer);
+    }
+
+    // --- APP LOGIC ---
+    if(localStorage.getItem('oma_sender_conf')) {
+        document.getElementById('setupBox').classList.add('hidden');
+        document.getElementById('sendBox').classList.remove('hidden');
+    }
+
+    function saveConf() {
+        const t = document.getElementById('topic').value;
+        const p = document.getElementById('pass').value;
+        if(t && p) {
+            localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
+            location.reload();
+        }
+    }
+    
+    function clearConf() { localStorage.removeItem('oma_sender_conf'); location.reload(); }
+
+    // Bild verkleinern (WICHTIG für ntfy Free Limit, JSON darf nicht riesig werden)
+    function resizeImage(file, callback) {
+        if(!file) return callback(null);
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                // Max 800px Breite, 0.6 Qualität -> hält den String klein genug für HTTP POST
+                const maxW = 800; 
+                const scale = Math.min(1, maxW / img.width);
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                callback(canvas.toDataURL('image/jpeg', 0.6));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function send() {
+        const conf = JSON.parse(localStorage.getItem('oma_sender_conf'));
+        const sender = document.getElementById('senderName').value || "Jemand";
+        const text = document.getElementById('msgText').value;
+        const fileInput = document.getElementById('fileInput');
+        const btn = document.getElementById('btnSend');
+        const status = document.getElementById('status');
+
+        if(!text && !fileInput.files[0]) return alert("Schreib was oder wähl ein Bild!");
+
+        btn.disabled = true;
+        btn.innerText = "Verschlüssle...";
+
+        resizeImage(fileInput.files[0], async (base64Img) => {
+            // Das Datenpaket bauen
+            const payload = {
+                sender: sender,
+                text: text,
+                image: base64Img // Ist null, wenn kein Bild gewählt
+            };
+
+            try {
+                // ALLES Verschlüsseln
+                const jsonStr = JSON.stringify(payload);
+                const encryptedData = await encryptText(jsonStr, conf.p);
+
+                btn.innerText = "Sende...";
+                
+                // An ntfy schicken (als reinen Text-Body)
+                await fetch(`https://ntfy.sh/${conf.t}`, {
+                    method: 'POST',
+                    body: encryptedData
+                });
+
+                status.innerText = "✅ Gesendet!";
+                document.getElementById('msgText').value = "";
+                document.getElementById('fileInput').value = "";
+                setTimeout(() => { status.innerText=""; btn.innerText="Absenden 🚀"; btn.disabled=false; }, 2000);
+
+            } catch(e) {
+                alert("Fehler: " + e.message);
+                btn.disabled = false;
+            }
+        });
+    }
+</script>
+</body>
+</html>
