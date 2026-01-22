@@ -7,17 +7,15 @@
 <style>
     /* === MODERN THEME VARIABLES === */
     :root {
-        --bg-app: #e5e5e5;
+        --bg-app: #f2f2f7;
         --bg-card: #ffffff;
         --text-main: #000000;
         --text-sub: #8e8e93;
-        --input-bg: #f2f2f7;
-        --accent: #007aff; /* iOS Blue */
+        --input-bg: #e5e5ea;
+        --accent: #007aff;
         --accent-gradient: linear-gradient(135deg, #007aff, #005ecb);
         --danger: #ff3b30;
-        --border: #c6c6c8;
-        --shadow: 0 4px 20px rgba(0,0,0,0.08);
-        --radius: 20px;
+        --radius: 16px;
     }
 
     body.dark {
@@ -27,7 +25,6 @@
         --text-sub: #98989f;
         --input-bg: #2c2c2e;
         --accent: #0a84ff;
-        --border: #38383a;
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -37,133 +34,97 @@
         background-color: var(--bg-app);
         color: var(--text-main);
         margin: 0; padding: 0;
+        /* WICHTIG: Kein Scrollen auf dem Body */
+        height: 100dvh; 
+        width: 100vw;
+        overflow: hidden;
         display: flex; justify-content: center;
-        min-height: 100vh;
     }
 
-    /* === APP CONTAINER === */
+    /* === APP FRAME === */
     .app-wrapper {
-        width: 100%; max-width: 500px;
+        width: 100%; max-width: 600px;
         background: var(--bg-card);
         display: flex; flex-direction: column;
-        height: 100vh; /* Fullscreen feeling */
-        position: relative;
-        box-shadow: var(--shadow);
+        height: 100%;
+        position: relative; /* Wichtig für Modal */
+        overflow: hidden;   /* Wichtig damit Modal nicht sichtbar drunter hängt */
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
     }
 
     /* === HEADER === */
     .app-header {
+        flex: 0 0 auto; /* Darf nicht schrumpfen */
         display: flex; justify-content: space-between; align-items: center;
         padding: 15px 20px;
         background: var(--bg-card);
         border-bottom: 1px solid var(--input-bg);
         z-index: 10;
     }
+    .app-title { font-size: 17px; font-weight: 700; }
+    .btn-icon { background: none; border: none; cursor: pointer; color: var(--accent); padding: 5px; }
 
-    .app-title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-    
-    /* Der dezente Settings Button */
-    .btn-icon {
-        background: none; border: none; cursor: pointer;
-        color: var(--accent); font-size: 24px; padding: 5px;
-        border-radius: 50%; display: flex; align-items: center; justify-content: center;
-        transition: background 0.2s;
-    }
-    .btn-icon:active { background: var(--input-bg); opacity: 0.7; }
-
-    /* === CONTENT SCROLL AREA === */
+    /* === SCROLL CONTENT === */
     .content-area {
-        flex: 1; overflow-y: auto; padding: 20px;
-        display: flex; flex-direction: column; gap: 15px;
+        flex: 1; 
+        overflow-y: auto; /* Nur HIER darf gescrollt werden */
+        padding: 20px;
+        display: flex; flex-direction: column; gap: 20px;
+        -webkit-overflow-scrolling: touch;
     }
 
-    /* === INPUT FIELDS (Chat Style) === */
-    .input-group { position: relative; }
-    
+    /* === INPUTS === */
     input, textarea {
-        width: 100%;
-        background: var(--input-bg);
-        border: none;
-        color: var(--text-main);
-        padding: 16px;
-        border-radius: var(--radius);
-        font-size: 16px;
-        font-family: inherit;
-        resize: none;
-        transition: box-shadow 0.2s;
+        width: 100%; background: var(--input-bg); border: none; color: var(--text-main);
+        padding: 16px; border-radius: 12px; font-size: 17px; font-family: inherit; resize: none;
     }
     input:focus, textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+    .label-small { font-size: 13px; color: var(--text-sub); margin-left: 12px; margin-bottom: 6px; font-weight: 500; text-transform: uppercase; }
 
-    .label-small {
-        font-size: 12px; color: var(--text-sub); margin-left: 15px; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;
-    }
-
-    /* === MEDIA UPLOAD === */
+    /* === MEDIA BOX === */
     .media-upload {
-        background: var(--input-bg);
-        border-radius: var(--radius);
-        padding: 15px;
-        text-align: center;
-        cursor: pointer;
-        border: 2px dashed var(--border);
-        transition: all 0.2s;
-        position: relative; overflow: hidden;
+        background: var(--input-bg); border-radius: 12px; padding: 20px;
+        text-align: center; cursor: pointer; border: 2px dashed rgba(128,128,128,0.3);
+        transition: 0.2s;
     }
-    .media-upload:active { background: var(--bg-app); }
-    
-    .media-preview-img {
-        width: 100%; height: 200px; object-fit: cover; border-radius: 12px;
-        display: none; margin-top: 10px;
-    }
-    .media-icon { font-size: 24px; margin-bottom: 5px; display: block; opacity: 0.5; }
+    .media-upload:active { background: rgba(128,128,128,0.1); }
+    .media-preview-img { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; display: none; margin-top: 10px; }
 
-    /* === SEND BUTTON (Floating Bottom) === */
+    /* === BOTTOM BAR === */
     .bottom-bar {
-        padding: 20px;
-        background: var(--bg-card);
-        border-top: 1px solid var(--input-bg);
+        flex: 0 0 auto; padding: 20px;
+        background: var(--bg-card); border-top: 1px solid var(--input-bg);
+        /* Keyboard fix iOS */
+        padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
-
     .btn-primary {
-        width: 100%;
-        background: var(--accent-gradient);
-        color: white;
-        font-size: 18px; font-weight: 700;
-        padding: 16px;
-        border: none; border-radius: 30px; /* Pill Shape */
-        cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
-        transition: transform 0.1s, opacity 0.2s;
-        display: flex; align-items: center; justify-content: center; gap: 10px;
+        width: 100%; background: var(--accent-gradient); color: white;
+        font-size: 17px; font-weight: 600; padding: 14px; border: none; border-radius: 12px;
+        cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .btn-primary:active { transform: scale(0.98); }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; grayscale: 1; }
+    .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.5; cursor: default; }
 
-    /* === SETTINGS MODAL (Slide Up) === */
+    /* === SETTINGS MODAL (OVERLAY) === */
     #settingsModal {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        position: absolute; 
+        top: 0; left: 0; width: 100%; height: 100%;
         background: var(--bg-card);
-        z-index: 100;
+        z-index: 50;
         display: flex; flex-direction: column;
-        transform: translateY(100%); /* Start hidden */
-        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        
+        /* Animation: Slide Up */
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     #settingsModal.open { transform: translateY(0); }
 
-    .settings-content { padding: 20px; overflow-y: auto; }
+    .setting-item { background: var(--input-bg); border-radius: 10px; padding: 15px; margin-bottom: 15px; }
+    .setting-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+    .copy-link { color: var(--accent); cursor: pointer; }
     
-    .setting-item {
-        background: var(--input-bg);
-        border-radius: 12px;
-        padding: 15px; margin-bottom: 15px;
-    }
-    
-    .setting-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-    .setting-label { font-weight: 600; font-size: 14px; }
-    
-    .copy-link { color: var(--accent); font-size: 13px; text-decoration: none; font-weight: bold; cursor: pointer; }
-
     /* Toggle Switch */
+    .switch-row { display: flex; justify-content: space-between; align-items: center; }
     .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
@@ -171,15 +132,13 @@
     input:checked + .slider { background-color: var(--accent); }
     input:checked + .slider:before { transform: translateX(22px); }
 
-    /* Toast Notification */
+    /* Toast */
     #toast {
-        position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
-        background: rgba(0,0,0,0.8); color: white; padding: 10px 20px;
-        border-radius: 30px; font-size: 14px; opacity: 0; pointer-events: none;
-        transition: opacity 0.3s, transform 0.3s; z-index: 50; font-weight: bold;
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+        background: rgba(0,0,0,0.85); color: white; padding: 15px 25px; border-radius: 30px;
+        font-weight: 600; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 100;
     }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
+    #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 </style>
 </head>
 <body>
@@ -189,8 +148,8 @@
     <!-- HEADER -->
     <header class="app-header">
         <div class="app-title">👵 an Oma</div>
-        <button class="btn-icon" onclick="toggleSettings(true)" title="Einstellungen">
-            <!-- Modernes Zahnrad Icon SVG -->
+        <!-- Modernes Zahnrad Icon -->
+        <button class="btn-icon" onclick="toggleSettings(true)">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
     </header>
@@ -199,73 +158,62 @@
     <div id="settingsModal">
         <header class="app-header">
             <div class="app-title">Einstellungen</div>
-            <button class="btn-icon" onclick="saveConf()">✕</button>
+            <button class="btn-icon" onclick="saveConf()">Fertig</button>
         </header>
-        <div class="settings-content">
+        <div class="content-area">
             
-            <div class="setting-item" style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="setting-label">🌙 Dark Mode</span>
-                <label class="switch">
-                    <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()">
-                    <span class="slider"></span>
-                </label>
+            <div class="setting-item switch-row">
+                <span>🌙 Dark Mode</span>
+                <label class="switch"><input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()"><span class="slider"></span></label>
             </div>
 
             <div class="setting-item">
                 <div class="setting-header">
-                    <span class="setting-label">Kanal Name (Topic)</span>
+                    <span>Kanal Name</span>
                     <span class="copy-link" onclick="copyToClip('topic')">Kopieren</span>
                 </div>
-                <input id="topic" placeholder="oma_geheim_..." oninput="validateTopic(this)" style="background:var(--bg-card); font-family:monospace;">
-                <div id="topicWarn" style="font-size:11px; color:var(--text-sub); margin-top:5px;">Max. 39 Zeichen (a-z, 0-9, -)</div>
+                <input id="topic" placeholder="oma_geheim" oninput="validateTopic(this)" style="font-family:monospace">
+                <div id="topicWarn" style="font-size:11px; margin-top:5px; color:var(--text-sub);">Max. 39 Zeichen</div>
             </div>
 
             <div class="setting-item">
                 <div class="setting-header">
-                    <span class="setting-label">Passwort</span>
+                    <span>Passwort</span>
                     <span class="copy-link" onclick="copyToClip('pass')">Kopieren</span>
                 </div>
-                <input id="pass" type="text" placeholder="Geheimes Passwort" style="background:var(--bg-card);">
+                <input id="pass" type="text" placeholder="Geheim">
             </div>
-
-            <button class="btn-primary" onclick="saveConf()" style="margin-top:20px;">Speichern</button>
         </div>
     </div>
 
-    <!-- MAIN CHAT INTERFACE -->
+    <!-- MAIN CHAT -->
     <div class="content-area">
-        
-        <!-- Absender -->
-        <div class="input-group">
+        <div>
             <div class="label-small">Absender</div>
-            <input id="senderName" placeholder="Dein Name (z.B. Max)">
+            <input id="senderName" placeholder="Dein Name">
         </div>
 
-        <!-- Nachricht -->
-        <div class="input-group" style="flex:1; display:flex; flex-direction:column;">
+        <div style="flex:1; display:flex; flex-direction:column;">
             <div class="label-small">Nachricht</div>
-            <textarea id="msgText" placeholder="Was gibt's Neues?" style="flex:1;"></textarea>
+            <textarea id="msgText" placeholder="Schreib was..." style="flex:1; min-height:120px;"></textarea>
         </div>
 
-        <!-- Bild Upload -->
         <div class="media-upload" onclick="document.getElementById('fileInput').click()">
-            <div class="media-icon">📷</div>
-            <div id="mediaText" style="font-weight:600; color:var(--accent);">Foto hinzufügen</div>
+            <div style="font-size:24px; opacity:0.5">📷</div>
+            <div id="mediaText" style="font-weight:600; color:var(--accent); margin-top:5px">Foto hinzufügen</div>
             <img id="imagePreview" class="media-preview-img">
             <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile()">
         </div>
-
     </div>
 
-    <!-- BOTTOM ACTION BAR -->
+    <!-- FOOTER -->
     <div class="bottom-bar">
         <button id="btnSend" class="btn-primary" onclick="send()">
-            <span>Senden</span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            Senden 🚀
         </button>
     </div>
 
-    <!-- Toast Notification -->
+    <!-- NOTIFICATION -->
     <div id="toast">Nachricht gesendet!</div>
 
 </div>
@@ -273,18 +221,13 @@
 <script>
     // --- BASIC SETUP ---
     let conf = JSON.parse(localStorage.getItem('oma_sender_conf')) || { t: '', p: '' };
-    
-    // Init Inputs
     document.getElementById('topic').value = conf.t;
     document.getElementById('pass').value = conf.p;
     
-    // Init Dark Mode
     if (localStorage.getItem('darkmode') === 'true') {
         document.body.classList.add('dark');
         document.getElementById('darkModeToggle').checked = true;
     }
-
-    // First Start? Show Settings
     if (!conf.t || !conf.p) toggleSettings(true);
 
     // --- UI FUNCTIONS ---
@@ -302,35 +245,26 @@
     function validateTopic(input) {
         const val = input.value;
         const warn = document.getElementById('topicWarn');
-        
         if (val.length > 39) {
             input.value = val.substring(0, 39);
-            warn.style.color = 'var(--danger)';
-            warn.innerText = "Limit erreicht (39 Zeichen).";
+            warn.style.color = 'var(--danger)'; warn.innerText = "Limit erreicht!";
         } else if (/[^a-zA-Z0-9-_]/.test(val)) {
-            warn.style.color = 'orange';
-            warn.innerText = "Nur Buchstaben, Zahlen, - und _";
+            warn.style.color = 'orange'; warn.innerText = "Nur a-z, 0-9, - und _";
         } else {
-            warn.style.color = 'var(--text-sub)';
-            warn.innerText = "Max. 39 Zeichen (a-z, 0-9, -)";
+            warn.style.color = 'var(--text-sub)'; warn.innerText = "Max. 39 Zeichen";
         }
     }
 
     function copyToClip(id) {
-        const val = document.getElementById(id).value;
-        if(val) {
-            navigator.clipboard.writeText(val);
-            showToast("Kopiert! 📋");
-        }
+        navigator.clipboard.writeText(document.getElementById(id).value);
+        showToast("Kopiert!");
     }
 
     function saveConf() {
         const t = document.getElementById('topic').value.trim();
         const p = document.getElementById('pass').value.trim();
-        
         if(t.length > 40) return alert("Topic zu lang!");
-        if(!t || !p) return alert("Bitte Topic und Passwort ausfüllen!");
-
+        if(!t || !p) return alert("Bitte ausfüllen!");
         localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
         document.getElementById('settingsModal').classList.remove('open');
     }
@@ -338,100 +272,50 @@
     function previewFile() {
         const file = document.getElementById('fileInput').files[0];
         const img = document.getElementById('imagePreview');
-        const txt = document.getElementById('mediaText');
-        
-        if (file) {
-            img.src = URL.createObjectURL(file);
-            img.style.display = 'block';
-            txt.innerText = "Foto ändern";
-        } else {
-            img.style.display = 'none';
-            txt.innerText = "Foto hinzufügen";
-        }
+        if (file) { img.src = URL.createObjectURL(file); img.style.display = 'block'; document.getElementById('mediaText').innerText = "Foto ändern"; }
+        else { img.style.display = 'none'; document.getElementById('mediaText').innerText = "Foto hinzufügen"; }
     }
 
     function showToast(msg) {
-        const t = document.getElementById('toast');
-        t.innerText = msg;
-        t.classList.add('show');
-        setTimeout(() => t.classList.remove('show'), 3000);
+        const t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2000);
     }
 
-    // --- CRYPTO & SEND LOGIC (Copy-Paste from previous working version) ---
+    // --- LOGIC (SAME AS BEFORE) ---
     const enc = new TextEncoder();
-    
-    function bufferToBase64(buffer) {
-        return new Promise((resolve) => {
-            const blob = new Blob([buffer]);
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.readAsDataURL(blob);
-        });
-    }
-
-    async function getKey(password, salt) {
-        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
-        return window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-    }
-
-    async function encryptText(text, password) {
-        const salt = window.crypto.getRandomValues(new Uint8Array(16));
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const key = await getKey(password, salt);
-        const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(text));
-        const buffer = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
-        buffer.set(salt, 0); buffer.set(iv, 16); buffer.set(new Uint8Array(encrypted), 28);
-        return await bufferToBase64(buffer);
-    }
+    function bufferToBase64(buffer) { return new Promise(r => { const b=new Blob([buffer]); const reader=new FileReader(); reader.onload=()=>r(reader.result.split(',')[1]); reader.readAsDataURL(b); }); }
+    async function getKey(p,s){ const k=await window.crypto.subtle.importKey("raw",enc.encode(p),{name:"PBKDF2"},false,["deriveKey"]); return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); }
+    async function encryptText(t,p){ const s=window.crypto.getRandomValues(new Uint8Array(16)); const iv=window.crypto.getRandomValues(new Uint8Array(12)); const k=await getKey(p,s); const e=await window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv},k,enc.encode(t)); const b=new Uint8Array(s.byteLength+iv.byteLength+e.byteLength); b.set(s,0); b.set(iv,16); b.set(new Uint8Array(e),28); return await bufferToBase64(b); }
 
     async function send() {
-        const currentConf = JSON.parse(localStorage.getItem('oma_sender_conf'));
-        if(!currentConf || !currentConf.t || !currentConf.p) return alert("Bitte Einstellungen prüfen!");
-
+        const conf = JSON.parse(localStorage.getItem('oma_sender_conf'));
+        if(!conf || !conf.t || !conf.p) return alert("Einstellungen prüfen!");
+        
         const sender = document.getElementById('senderName').value || "Jemand";
         const text = document.getElementById('msgText').value;
-        const fileInput = document.getElementById('fileInput');
+        const file = document.getElementById('fileInput').files[0];
         const btn = document.getElementById('btnSend');
 
-        if(!text && !fileInput.files[0]) return alert("Text oder Bild fehlt!");
+        if(!text && !file) return showToast("Text oder Bild fehlt!");
 
-        btn.disabled = true;
-        btn.innerHTML = '<span>Verschlüssle...</span>';
+        btn.disabled = true; btn.innerText = "Sende...";
 
         try {
-            const payload = { sender: sender, text: text };
-            const jsonStr = JSON.stringify(payload);
-            const encryptedData = await encryptText(jsonStr, currentConf.p);
-
-            btn.innerHTML = '<span>Sende...</span>';
+            const encData = await encryptText(JSON.stringify({sender, text}), conf.p);
             
-            if (fileInput.files[0]) {
-                await fetch(`https://ntfy.sh/${currentConf.t}`, {
-                    method: 'PUT',
-                    body: fileInput.files[0],
-                    headers: { 'Title': encryptedData, 'Filename': 'foto.jpg' }
-                });
+            if (file) {
+                await fetch(`https://ntfy.sh/${conf.t}`, { method: 'PUT', body: file, headers: { 'Title': encData, 'Filename': 'foto.jpg' } });
             } else {
-                await fetch(`https://ntfy.sh/${currentConf.t}`, {
-                    method: 'POST',
-                    body: encryptedData
-                });
+                await fetch(`https://ntfy.sh/${conf.t}`, { method: 'POST', body: encData });
             }
 
-            showToast("Gesendet! 🚀");
+            showToast("Gesendet! ✅");
             document.getElementById('msgText').value = "";
             document.getElementById('fileInput').value = "";
-            previewFile(); // Reset Preview
-            
-            setTimeout(() => { 
-                btn.innerHTML = '<span>Senden</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
-                btn.disabled=false; 
-            }, 1000);
-
+            previewFile();
+            btn.innerText = "Senden 🚀"; btn.disabled = false;
         } catch(e) {
-            alert("Fehler: " + e.message);
-            btn.disabled = false;
-            btn.innerText = "Senden";
+            alert("Fehler: " + e.message); btn.disabled = false;
         }
     }
 </script>
