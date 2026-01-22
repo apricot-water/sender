@@ -66,11 +66,49 @@
     
     #toast { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9); background: rgba(0,0,0,0.85); color: white; padding: 15px 25px; border-radius: 30px; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 200; }
     #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+/* === PROGRESS OVERLAY === */
+    #progressOverlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.4); backdrop-filter: blur(5px);
+        z-index: 200;
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    #progressOverlay.open { opacity: 1; pointer-events: auto; }
+
+    .progress-card {
+        background: var(--bg-card); width: 80%; max-width: 300px;
+        padding: 25px; border-radius: 20px; text-align: center;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    
+    .progress-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; }
+    .progress-status { font-size: 13px; color: var(--text-sub); margin-bottom: 15px; min-height: 1.2em;}
+
+    .progress-track {
+        background: var(--input-bg); height: 8px; border-radius: 4px; overflow: hidden; position: relative;
+    }
+    .progress-bar {
+        background: var(--accent); height: 100%; width: 0%;
+        transition: width 0.2s; border-radius: 4px;
+    }
+
 </style>
 </head>
 <body>
 
 <div class="app-wrapper">
+    <!-- PROGRESS OVERLAY -->
+    <div id="progressOverlay">
+        <div class="progress-card">
+            <div class="progress-title">Sende Nachricht...</div>
+            <div id="progressStatus" class="progress-status">Vorbereitung...</div>
+            <div class="progress-track">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <div id="progressPercent" style="font-size:12px; margin-top:5px; color:var(--text-sub)">0%</div>
+        </div>
+    </div>
     
     <!-- HEADER -->
     <header class="app-header">
@@ -270,32 +308,132 @@
         else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
     }
 
+// --- NEU: Bild Komprimierung ---
+    function compressImage(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 1200; // Genug für Omas Tablet
+                    const scaleSize = MAX_WIDTH / img.width;
+                    const width = (scaleSize < 1) ? MAX_WIDTH : img.width;
+                    const height = (scaleSize < 1) ? img.height * scaleSize : img.height;
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Export als JPEG mit 70% Qualität
+                    canvas.toBlob((blob) => {
+                        resolve(blob);
+                    }, 'image/jpeg', 0.7); 
+                };
+                img.onerror = (e) => reject(e);
+            };
+            reader.onerror = (e) => reject(e);
+        });
+    }
+
+    // --- NEU: Senden mit Progress ---
     async function send() {
         if(!conf.t || !conf.p) return alert("Bitte erst Einstellungen prüfen!");
+        
         const name = document.getElementById('senderName').value || "Familie";
         const text = document.getElementById('msgText').value;
-        const file = document.getElementById('fileInput').files[0];
+        const fileInput = document.getElementById('fileInput').files[0];
         
-        if(!text && !file) return showToast("Leer?");
-        const btn = document.getElementById('btnSend'); btn.disabled=true; btn.innerText="Verschlüssele...";
+        if(!text && !fileInput) return showToast("Leer?");
 
+        // UI öffnen
+        const overlay = document.getElementById('progressOverlay');
+        const status = document.getElementById('progressStatus');
+        const bar = document.getElementById('progressBar');
+        const perc = document.getElementById('progressPercent');
+        
+        overlay.classList.add('open');
+        bar.style.width = '0%'; perc.innerText = '0%';
+        
         try {
+            // Schritt 1: Bild verarbeiten
+            let fileToSend = null;
+            if(fileInput) {
+                status.innerText = "Komprimiere Bild...";
+                // Kleiner Fake-Fortschritt damit man sieht dass was passiert
+                bar.style.width = '20%'; 
+                fileToSend = await compressImage(fileInput);
+            }
+
+            // Schritt 2: Verschlüsseln
+            status.innerText = "Verschlüssele...";
+            bar.style.width = '40%';
+            
+            // Kleines Timeout damit UI rendern kann
+            await new Promise(r => setTimeout(r, 100));
+
             const payload = JSON.stringify({ sender: name, text: text, timestamp: Date.now() });
             const encData = await encryptText(payload, conf.p);
+
+            // Schritt 3: Upload mit XHR (für Progress Events)
+            status.innerText = "Lade hoch...";
             
-            btn.innerText="Sende...";
-            if(file) {
-                await fetch(`https://ntfy.sh/${conf.t}`, { method:'PUT', body:file, headers: {'Title': encData, 'Filename':'img.jpg'} });
-            } else {
-                await fetch(`https://ntfy.sh/${conf.t}`, { method:'POST', body:encData });
-            }
-            showToast("Gesendet! ✅");
-            document.getElementById('msgText').value="";
-            document.getElementById('fileInput').value="";
-            previewFile();
-        } catch(e) { alert("Fehler: "+e); }
-        btn.disabled=false; btn.innerText="Senden 🚀";
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const url = `https://ntfy.sh/${conf.t}`;
+                
+                if (fileToSend) {
+                    xhr.open('PUT', url);
+                    xhr.setRequestHeader('Title', encData);
+                    xhr.setRequestHeader('Filename', 'img.jpg');
+                } else {
+                    xhr.open('POST', url);
+                }
+
+                // Progress Handler
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        // Wir starten visuell bei 40% (nach Crypto) und gehen bis 100%
+                        const realPercent = (e.loaded / e.total); 
+                        const visualPercent = 40 + (realPercent * 60); 
+                        bar.style.width = visualPercent + '%';
+                        perc.innerText = Math.round(visualPercent) + '%';
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        // Success
+                        bar.style.width = '100%';
+                        status.innerText = "Fertig!";
+                        setTimeout(() => {
+                            overlay.classList.remove('open');
+                            showToast("Gesendet! ✅");
+                            document.getElementById('msgText').value = "";
+                            document.getElementById('fileInput').value = "";
+                            previewFile();
+                            resolve();
+                        }, 500);
+                    } else {
+                        reject("Server Fehler: " + xhr.status);
+                    }
+                };
+
+                xhr.onerror = () => reject("Netzwerkfehler");
+                
+                // Senden
+                xhr.send(fileToSend ? fileToSend : encData);
+            });
+
+        } catch(e) {
+            alert("Fehler: " + e);
+            overlay.classList.remove('open');
+        }
     }
+    
 
     // --- 5. VIEWER LOGIC (Simplified) ---
     let viewerMsgs = [];
