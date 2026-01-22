@@ -2,92 +2,279 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>An Oma senden</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Nachricht an Oma</title>
 <style>
-    :root { --bg: #f0f2f5; --card: #ffffff; --text: #1a1a1a; --accent: #2196f3; }
-    body.dark { --bg: #121212; --card: #1e1e1e; --text: #ffffff; --accent: #bb86fc; }
+    /* === MODERN THEME VARIABLES === */
+    :root {
+        --bg-app: #e5e5e5;
+        --bg-card: #ffffff;
+        --text-main: #000000;
+        --text-sub: #8e8e93;
+        --input-bg: #f2f2f7;
+        --accent: #007aff; /* iOS Blue */
+        --accent-gradient: linear-gradient(135deg, #007aff, #005ecb);
+        --danger: #ff3b30;
+        --border: #c6c6c8;
+        --shadow: 0 4px 20px rgba(0,0,0,0.08);
+        --radius: 20px;
+    }
 
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background: var(--bg); color: var(--text); max-width: 600px; margin: auto; transition: background 0.3s; }
-    
-    /* Header */
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-    .header h2 { margin: 0; }
-    .icon-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text); padding: 5px; border-radius: 50%; transition: background 0.2s; }
-    .icon-btn:hover { background: rgba(128,128,128,0.2); }
+    body.dark {
+        --bg-app: #000000;
+        --bg-card: #1c1c1e;
+        --text-main: #ffffff;
+        --text-sub: #98989f;
+        --input-bg: #2c2c2e;
+        --accent: #0a84ff;
+        --border: #38383a;
+    }
 
-    /* Inputs */
-    input, textarea, button { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 12px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; background: var(--card); color: var(--text); }
-    button { background: var(--accent); color: white; font-weight: bold; border: none; cursor: pointer; transition: transform 0.1s; }
-    button:active { transform: scale(0.98); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-    /* Settings Modal */
-    #settingsPanel { display: none; background: var(--card); padding: 20px; border-radius: 16px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); margin-bottom: 20px; border: 1px solid var(--accent); }
-    .setting-row { display: flex; gap: 10px; margin-bottom: 10px; }
-    .copy-btn { width: auto; padding: 10px; margin: 0; background: #666; font-size: 14px; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: var(--bg-app);
+        color: var(--text-main);
+        margin: 0; padding: 0;
+        display: flex; justify-content: center;
+        min-height: 100vh;
+    }
+
+    /* === APP CONTAINER === */
+    .app-wrapper {
+        width: 100%; max-width: 500px;
+        background: var(--bg-card);
+        display: flex; flex-direction: column;
+        height: 100vh; /* Fullscreen feeling */
+        position: relative;
+        box-shadow: var(--shadow);
+    }
+
+    /* === HEADER === */
+    .app-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 15px 20px;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--input-bg);
+        z-index: 10;
+    }
+
+    .app-title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
     
-    /* Dark Mode Toggle */
-    .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; }
+    /* Der dezente Settings Button */
+    .btn-icon {
+        background: none; border: none; cursor: pointer;
+        color: var(--accent); font-size: 24px; padding: 5px;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        transition: background 0.2s;
+    }
+    .btn-icon:active { background: var(--input-bg); opacity: 0.7; }
+
+    /* === CONTENT SCROLL AREA === */
+    .content-area {
+        flex: 1; overflow-y: auto; padding: 20px;
+        display: flex; flex-direction: column; gap: 15px;
+    }
+
+    /* === INPUT FIELDS (Chat Style) === */
+    .input-group { position: relative; }
     
-    .hidden { display: none; }
-    .info-txt { font-size: 12px; color: #888; margin-top: -10px; margin-bottom: 15px; display: block; }
-    .error { border-color: red !important; }
+    input, textarea {
+        width: 100%;
+        background: var(--input-bg);
+        border: none;
+        color: var(--text-main);
+        padding: 16px;
+        border-radius: var(--radius);
+        font-size: 16px;
+        font-family: inherit;
+        resize: none;
+        transition: box-shadow 0.2s;
+    }
+    input:focus, textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+
+    .label-small {
+        font-size: 12px; color: var(--text-sub); margin-left: 15px; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;
+    }
+
+    /* === MEDIA UPLOAD === */
+    .media-upload {
+        background: var(--input-bg);
+        border-radius: var(--radius);
+        padding: 15px;
+        text-align: center;
+        cursor: pointer;
+        border: 2px dashed var(--border);
+        transition: all 0.2s;
+        position: relative; overflow: hidden;
+    }
+    .media-upload:active { background: var(--bg-app); }
+    
+    .media-preview-img {
+        width: 100%; height: 200px; object-fit: cover; border-radius: 12px;
+        display: none; margin-top: 10px;
+    }
+    .media-icon { font-size: 24px; margin-bottom: 5px; display: block; opacity: 0.5; }
+
+    /* === SEND BUTTON (Floating Bottom) === */
+    .bottom-bar {
+        padding: 20px;
+        background: var(--bg-card);
+        border-top: 1px solid var(--input-bg);
+    }
+
+    .btn-primary {
+        width: 100%;
+        background: var(--accent-gradient);
+        color: white;
+        font-size: 18px; font-weight: 700;
+        padding: 16px;
+        border: none; border-radius: 30px; /* Pill Shape */
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+        transition: transform 0.1s, opacity 0.2s;
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; grayscale: 1; }
+
+    /* === SETTINGS MODAL (Slide Up) === */
+    #settingsModal {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-card);
+        z-index: 100;
+        display: flex; flex-direction: column;
+        transform: translateY(100%); /* Start hidden */
+        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    #settingsModal.open { transform: translateY(0); }
+
+    .settings-content { padding: 20px; overflow-y: auto; }
+    
+    .setting-item {
+        background: var(--input-bg);
+        border-radius: 12px;
+        padding: 15px; margin-bottom: 15px;
+    }
+    
+    .setting-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+    .setting-label { font-weight: 600; font-size: 14px; }
+    
+    .copy-link { color: var(--accent); font-size: 13px; text-decoration: none; font-weight: bold; cursor: pointer; }
+
+    /* Toggle Switch */
+    .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 24px; width: 24px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(22px); }
+
+    /* Toast Notification */
+    #toast {
+        position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: rgba(0,0,0,0.8); color: white; padding: 10px 20px;
+        border-radius: 30px; font-size: 14px; opacity: 0; pointer-events: none;
+        transition: opacity 0.3s, transform 0.3s; z-index: 50; font-weight: bold;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
 </style>
 </head>
 <body>
 
-    <div class="header">
-        <h2>👵 An Oma senden</h2>
-        <button class="icon-btn" onclick="toggleSettings()">⚙️</button>
+<div class="app-wrapper">
+    
+    <!-- HEADER -->
+    <header class="app-header">
+        <div class="app-title">👵 an Oma</div>
+        <button class="btn-icon" onclick="toggleSettings(true)" title="Einstellungen">
+            <!-- Modernes Zahnrad Icon SVG -->
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+    </header>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal">
+        <header class="app-header">
+            <div class="app-title">Einstellungen</div>
+            <button class="btn-icon" onclick="saveConf()">✕</button>
+        </header>
+        <div class="settings-content">
+            
+            <div class="setting-item" style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="setting-label">🌙 Dark Mode</span>
+                <label class="switch">
+                    <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <div class="setting-header">
+                    <span class="setting-label">Kanal Name (Topic)</span>
+                    <span class="copy-link" onclick="copyToClip('topic')">Kopieren</span>
+                </div>
+                <input id="topic" placeholder="oma_geheim_..." oninput="validateTopic(this)" style="background:var(--bg-card); font-family:monospace;">
+                <div id="topicWarn" style="font-size:11px; color:var(--text-sub); margin-top:5px;">Max. 39 Zeichen (a-z, 0-9, -)</div>
+            </div>
+
+            <div class="setting-item">
+                <div class="setting-header">
+                    <span class="setting-label">Passwort</span>
+                    <span class="copy-link" onclick="copyToClip('pass')">Kopieren</span>
+                </div>
+                <input id="pass" type="text" placeholder="Geheimes Passwort" style="background:var(--bg-card);">
+            </div>
+
+            <button class="btn-primary" onclick="saveConf()" style="margin-top:20px;">Speichern</button>
+        </div>
     </div>
 
-    <!-- EINSTELLUNGEN (Versteckt) -->
-    <div id="settingsPanel">
-        <h3 style="margin-top:0">Einstellungen</h3>
+    <!-- MAIN CHAT INTERFACE -->
+    <div class="content-area">
         
-        <div class="switch-row">
-            <span>🌙 Dark Mode</span>
-            <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" style="width:auto; transform: scale(1.5);">
+        <!-- Absender -->
+        <div class="input-group">
+            <div class="label-small">Absender</div>
+            <input id="senderName" placeholder="Dein Name (z.B. Max)">
         </div>
 
-        <label>Kanal Name (Topic):</label>
-        <div class="setting-row">
-            <input id="topic" placeholder="oma_geheim_..." oninput="validateTopic(this)">
-            <button class="copy-btn" onclick="copyToClip('topic')">📋</button>
-        </div>
-        <small class="info-txt" id="topicWarn">Erlaubt: a-z, 0-9, - (Max 40 Zeichen)</small>
-
-        <label>Passwort:</label>
-        <div class="setting-row">
-            <input id="pass" type="text" placeholder="Geheimes Passwort">
-            <button class="copy-btn" onclick="copyToClip('pass')">📋</button>
+        <!-- Nachricht -->
+        <div class="input-group" style="flex:1; display:flex; flex-direction:column;">
+            <div class="label-small">Nachricht</div>
+            <textarea id="msgText" placeholder="Was gibt's Neues?" style="flex:1;"></textarea>
         </div>
 
-        <button onclick="saveConf()" style="margin-top:10px;">💾 Speichern & Schließen</button>
-    </div>
-
-    <!-- SENDE BEREICH -->
-    <div id="sendBox">
-        <input id="senderName" placeholder="Dein Name (z.B. Max)">
-        
-        <textarea id="msgText" rows="5" placeholder="Nachricht schreiben..."></textarea>
-        
-        <label style="display:block; margin-bottom:10px; font-weight:bold; cursor:pointer; background:var(--card); padding:10px; border-radius:10px; border:1px dashed #999; text-align:center;">
-            📷 Foto auswählen (Optional)
+        <!-- Bild Upload -->
+        <div class="media-upload" onclick="document.getElementById('fileInput').click()">
+            <div class="media-icon">📷</div>
+            <div id="mediaText" style="font-weight:600; color:var(--accent);">Foto hinzufügen</div>
+            <img id="imagePreview" class="media-preview-img">
             <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile()">
-            <div id="filePreview" style="font-weight:normal; font-size:12px; margin-top:5px; color:var(--accent);"></div>
-        </label>
+        </div>
 
-        <button onclick="send()" id="btnSend">Absenden 🚀</button>
-        <div id="status" style="margin-top:10px; text-align:center; font-weight:bold;"></div>
     </div>
+
+    <!-- BOTTOM ACTION BAR -->
+    <div class="bottom-bar">
+        <button id="btnSend" class="btn-primary" onclick="send()">
+            <span>Senden</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast">Nachricht gesendet!</div>
+
+</div>
 
 <script>
     // --- BASIC SETUP ---
     let conf = JSON.parse(localStorage.getItem('oma_sender_conf')) || { t: '', p: '' };
     
-    // Init Values
+    // Init Inputs
     document.getElementById('topic').value = conf.t;
     document.getElementById('pass').value = conf.p;
     
@@ -97,13 +284,14 @@
         document.getElementById('darkModeToggle').checked = true;
     }
 
-    // Wenn noch nichts eingestellt ist, Einstellungen öffnen
-    if (!conf.t || !conf.p) toggleSettings();
+    // First Start? Show Settings
+    if (!conf.t || !conf.p) toggleSettings(true);
 
-    // --- UI FUNKTIONEN ---
-    function toggleSettings() {
-        const p = document.getElementById('settingsPanel');
-        p.style.display = p.style.display === 'block' ? 'none' : 'block';
+    // --- UI FUNCTIONS ---
+    function toggleSettings(forceOpen = false) {
+        const m = document.getElementById('settingsModal');
+        if (forceOpen) m.classList.add('open');
+        else m.classList.toggle('open');
     }
 
     function toggleDarkMode() {
@@ -112,21 +300,19 @@
     }
 
     function validateTopic(input) {
-        // Erlaubt: a-z, A-Z, 0-9, - und _
-        // Max 40 Zeichen (Sicherheitspuffer, ntfy erlaubt 64)
         const val = input.value;
         const warn = document.getElementById('topicWarn');
         
         if (val.length > 39) {
             input.value = val.substring(0, 39);
-            warn.style.color = 'red';
-            warn.innerText = "Maximum erreicht (39 Zeichen)!";
+            warn.style.color = 'var(--danger)';
+            warn.innerText = "Limit erreicht (39 Zeichen).";
         } else if (/[^a-zA-Z0-9-_]/.test(val)) {
             warn.style.color = 'orange';
-            warn.innerText = "Bitte nur Buchstaben, Zahlen und - oder _";
+            warn.innerText = "Nur Buchstaben, Zahlen, - und _";
         } else {
-            warn.style.color = '#888';
-            warn.innerText = "Erlaubt: a-z, 0-9, - (Max 39 Zeichen)";
+            warn.style.color = 'var(--text-sub)';
+            warn.innerText = "Max. 39 Zeichen (a-z, 0-9, -)";
         }
     }
 
@@ -134,7 +320,7 @@
         const val = document.getElementById(id).value;
         if(val) {
             navigator.clipboard.writeText(val);
-            alert("Kopiert!");
+            showToast("Kopiert! 📋");
         }
     }
 
@@ -146,15 +332,32 @@
         if(!t || !p) return alert("Bitte Topic und Passwort ausfüllen!");
 
         localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
-        toggleSettings();
+        document.getElementById('settingsModal').classList.remove('open');
     }
 
     function previewFile() {
         const file = document.getElementById('fileInput').files[0];
-        document.getElementById('filePreview').innerText = file ? `Ausgewählt: ${file.name}` : "";
+        const img = document.getElementById('imagePreview');
+        const txt = document.getElementById('mediaText');
+        
+        if (file) {
+            img.src = URL.createObjectURL(file);
+            img.style.display = 'block';
+            txt.innerText = "Foto ändern";
+        } else {
+            img.style.display = 'none';
+            txt.innerText = "Foto hinzufügen";
+        }
     }
 
-    // --- CRYPTO & SEND LOGIC (Bleibt wie vorher) ---
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // --- CRYPTO & SEND LOGIC (Copy-Paste from previous working version) ---
     const enc = new TextEncoder();
     
     function bufferToBase64(buffer) {
@@ -183,25 +386,24 @@
 
     async function send() {
         const currentConf = JSON.parse(localStorage.getItem('oma_sender_conf'));
-        if(!currentConf || !currentConf.t || !currentConf.p) return alert("Bitte erst Einstellungen (Zahnrad) prüfen!");
+        if(!currentConf || !currentConf.t || !currentConf.p) return alert("Bitte Einstellungen prüfen!");
 
         const sender = document.getElementById('senderName').value || "Jemand";
         const text = document.getElementById('msgText').value;
         const fileInput = document.getElementById('fileInput');
         const btn = document.getElementById('btnSend');
-        const status = document.getElementById('status');
 
-        if(!text && !fileInput.files[0]) return alert("Schreib was oder wähl ein Bild!");
+        if(!text && !fileInput.files[0]) return alert("Text oder Bild fehlt!");
 
         btn.disabled = true;
-        btn.innerText = "Verschlüssle...";
+        btn.innerHTML = '<span>Verschlüssle...</span>';
 
         try {
             const payload = { sender: sender, text: text };
             const jsonStr = JSON.stringify(payload);
             const encryptedData = await encryptText(jsonStr, currentConf.p);
 
-            btn.innerText = "Sende...";
+            btn.innerHTML = '<span>Sende...</span>';
             
             if (fileInput.files[0]) {
                 await fetch(`https://ntfy.sh/${currentConf.t}`, {
@@ -216,16 +418,20 @@
                 });
             }
 
-            status.innerText = "✅ Gesendet!";
+            showToast("Gesendet! 🚀");
             document.getElementById('msgText').value = "";
             document.getElementById('fileInput').value = "";
-            document.getElementById('filePreview').innerText = "";
-            setTimeout(() => { status.innerText=""; btn.innerText="Absenden 🚀"; btn.disabled=false; }, 2000);
+            previewFile(); // Reset Preview
+            
+            setTimeout(() => { 
+                btn.innerHTML = '<span>Senden</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+                btn.disabled=false; 
+            }, 1000);
 
         } catch(e) {
             alert("Fehler: " + e.message);
             btn.disabled = false;
-            btn.innerText = "Absenden 🚀";
+            btn.innerText = "Senden";
         }
     }
 </script>
