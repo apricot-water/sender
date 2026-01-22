@@ -493,6 +493,67 @@
         }
     }
 
+    // --- DELETE LOGIC ---
+    async function deleteMessage(ts) {
+        if(!confirm("Nachricht wirklich löschen?")) return;
+        
+        const btn = event.currentTarget;
+        btn.innerHTML = "⏳"; // Lade-Indikator
+        
+        try {
+            // 1. GitHub JSON laden (Wir brauchen den SHA Hash für das Update!)
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
+            const resp = await fetch(url, { 
+                headers: { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' }
+            });
+            
+            if(!resp.ok) throw new Error("GitHub Load Error");
+            
+            const fileData = await resp.json();
+            // Content ist base64, muss decoded werden
+            const content = JSON.parse(decodeURIComponent(escape(atob(fileData.content))));
+            
+            // 2. Nachricht finden und verstecken
+            let found = false;
+            content.forEach(m => {
+                if(m.timestamp === ts) { m.hidden = true; found = true; }
+            });
+            
+            if(!found) throw new Error("Nachricht nicht im Archiv gefunden (vielleicht noch nicht gesynct?)");
+
+            // 3. Zurück zu GitHub pushen
+            const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
+            const updateBody = {
+                message: "Delete Message via App",
+                content: newContent,
+                sha: fileData.sha // WICHTIG!
+            };
+
+            const putResp = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${conf.gt}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateBody)
+            });
+
+            if(!putResp.ok) throw new Error("GitHub Save Error");
+
+            // 4. Live-Befehl an ntfy senden (für sofortigen Effekt)
+            await fetch(`https://ntfy.sh/${conf.t}`, { 
+                method: 'POST', 
+                body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
+            });
+
+            alert("Gelöscht! 🗑️");
+            loadViewerData(); // Reload UI
+
+        } catch(e) {
+            alert("Fehler: " + e.message);
+            btn.innerHTML = "🗑️";
+        }
+    }
+
+    // --- UPDATE VIEWER (UI Update) ---
+    // Ersetze deine alte updateViewer() Funktion hiermit:
     function updateViewer() {
         if(viewerMsgs.length === 0) return;
         const msg = viewerMsgs[viewerIdx];
@@ -503,8 +564,20 @@
         else { img.style.display = 'none'; }
         
         const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
-        document.getElementById('viewerMeta').innerText = `${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})`;
+        
+        // NEU: Mülleimer Button hinzufügen
+        const metaHtml = `
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
+                <button onclick="deleteMessage(${msg.ts})" style="background:none; border:none; cursor:pointer; font-size:16px;">🗑️</button>
+            </div>
+        `;
+        document.getElementById('viewerMeta').innerHTML = metaHtml;
     }
+    
+    // Kleiner Fix für loadViewerData, damit versteckte Nachrichten im Sender gar nicht erst angezeigt werden
+    // Suche in loadViewerData() nach der "viewerMsgs.push" Zeile und füge davor ein:
+    // if(c.hidden) continue;  <-- NEU
 
     function viewerNext(dir) {
         const next = viewerIdx + dir;
