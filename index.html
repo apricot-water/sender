@@ -5,47 +5,157 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>An Oma senden</title>
 <style>
-    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 600px; margin: auto; }
-    input, textarea, button { width: 100%; padding: 15px; margin-bottom: 10px; border-radius: 10px; border: 1px solid #ccc; box-sizing: border-box; }
-    button { background: #2196f3; color: white; font-weight: bold; border: none; cursor: pointer; }
+    :root { --bg: #f0f2f5; --card: #ffffff; --text: #1a1a1a; --accent: #2196f3; }
+    body.dark { --bg: #121212; --card: #1e1e1e; --text: #ffffff; --accent: #bb86fc; }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background: var(--bg); color: var(--text); max-width: 600px; margin: auto; transition: background 0.3s; }
+    
+    /* Header */
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .header h2 { margin: 0; }
+    .icon-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text); padding: 5px; border-radius: 50%; transition: background 0.2s; }
+    .icon-btn:hover { background: rgba(128,128,128,0.2); }
+
+    /* Inputs */
+    input, textarea, button { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 12px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; background: var(--card); color: var(--text); }
+    button { background: var(--accent); color: white; font-weight: bold; border: none; cursor: pointer; transition: transform 0.1s; }
     button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Settings Modal */
+    #settingsPanel { display: none; background: var(--card); padding: 20px; border-radius: 16px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); margin-bottom: 20px; border: 1px solid var(--accent); }
+    .setting-row { display: flex; gap: 10px; margin-bottom: 10px; }
+    .copy-btn { width: auto; padding: 10px; margin: 0; background: #666; font-size: 14px; }
+    
+    /* Dark Mode Toggle */
+    .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; }
+    
     .hidden { display: none; }
+    .info-txt { font-size: 12px; color: #888; margin-top: -10px; margin-bottom: 15px; display: block; }
+    .error { border-color: red !important; }
 </style>
 </head>
 <body>
 
-    <h2>👵 Nachricht an Oma</h2>
-
-    <div id="setupBox">
-        <input id="topic" placeholder="Kanal Name (Muss gleich sein wie bei Oma!)">
-        <input id="pass" type="password" placeholder="Passwort (Muss gleich sein!)">
-        <button onclick="saveConf()">Speichern</button>
+    <div class="header">
+        <h2>👵 An Oma senden</h2>
+        <button class="icon-btn" onclick="toggleSettings()">⚙️</button>
     </div>
 
-    <div id="sendBox" class="hidden">
-        <input id="senderName" placeholder="Dein Name (z.B. Max)">
-        <textarea id="msgText" rows="4" placeholder="Nachricht schreiben..."></textarea>
+    <!-- EINSTELLUNGEN (Versteckt) -->
+    <div id="settingsPanel">
+        <h3 style="margin-top:0">Einstellungen</h3>
         
-        <label style="display:block; margin-bottom:10px; font-weight:bold;">
-            📷 Foto (Optional):
-            <input type="file" id="fileInput" accept="image/*" style="margin-top:5px;">
+        <div class="switch-row">
+            <span>🌙 Dark Mode</span>
+            <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" style="width:auto; transform: scale(1.5);">
+        </div>
+
+        <label>Kanal Name (Topic):</label>
+        <div class="setting-row">
+            <input id="topic" placeholder="oma_geheim_..." oninput="validateTopic(this)">
+            <button class="copy-btn" onclick="copyToClip('topic')">📋</button>
+        </div>
+        <small class="info-txt" id="topicWarn">Erlaubt: a-z, 0-9, - (Max 40 Zeichen)</small>
+
+        <label>Passwort:</label>
+        <div class="setting-row">
+            <input id="pass" type="text" placeholder="Geheimes Passwort">
+            <button class="copy-btn" onclick="copyToClip('pass')">📋</button>
+        </div>
+
+        <button onclick="saveConf()" style="margin-top:10px;">💾 Speichern & Schließen</button>
+    </div>
+
+    <!-- SENDE BEREICH -->
+    <div id="sendBox">
+        <input id="senderName" placeholder="Dein Name (z.B. Max)">
+        
+        <textarea id="msgText" rows="5" placeholder="Nachricht schreiben..."></textarea>
+        
+        <label style="display:block; margin-bottom:10px; font-weight:bold; cursor:pointer; background:var(--card); padding:10px; border-radius:10px; border:1px dashed #999; text-align:center;">
+            📷 Foto auswählen (Optional)
+            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile()">
+            <div id="filePreview" style="font-weight:normal; font-size:12px; margin-top:5px; color:var(--accent);"></div>
         </label>
 
         <button onclick="send()" id="btnSend">Absenden 🚀</button>
-        <div id="status" style="margin-top:10px; text-align:center;"></div>
-        <br><br>
-        <button onclick="clearConf()" style="background:#666; font-size:12px;">Einstellungen zurücksetzen</button>
+        <div id="status" style="margin-top:10px; text-align:center; font-weight:bold;"></div>
     </div>
 
-<!-- ... (HTML Teil bleibt gleich) ... -->
-
 <script>
-    // --- CRYPTO LOGIC (GLEICH) ---
-    const enc = new TextEncoder();
-    async function getKey(password, salt) {
-        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
-        return window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    // --- BASIC SETUP ---
+    let conf = JSON.parse(localStorage.getItem('oma_sender_conf')) || { t: '', p: '' };
+    
+    // Init Values
+    document.getElementById('topic').value = conf.t;
+    document.getElementById('pass').value = conf.p;
+    
+    // Init Dark Mode
+    if (localStorage.getItem('darkmode') === 'true') {
+        document.body.classList.add('dark');
+        document.getElementById('darkModeToggle').checked = true;
     }
+
+    // Wenn noch nichts eingestellt ist, Einstellungen öffnen
+    if (!conf.t || !conf.p) toggleSettings();
+
+    // --- UI FUNKTIONEN ---
+    function toggleSettings() {
+        const p = document.getElementById('settingsPanel');
+        p.style.display = p.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark');
+        localStorage.setItem('darkmode', document.body.classList.contains('dark'));
+    }
+
+    function validateTopic(input) {
+        // Erlaubt: a-z, A-Z, 0-9, - und _
+        // Max 40 Zeichen (Sicherheitspuffer, ntfy erlaubt 64)
+        const val = input.value;
+        const warn = document.getElementById('topicWarn');
+        
+        if (val.length > 39) {
+            input.value = val.substring(0, 39);
+            warn.style.color = 'red';
+            warn.innerText = "Maximum erreicht (39 Zeichen)!";
+        } else if (/[^a-zA-Z0-9-_]/.test(val)) {
+            warn.style.color = 'orange';
+            warn.innerText = "Bitte nur Buchstaben, Zahlen und - oder _";
+        } else {
+            warn.style.color = '#888';
+            warn.innerText = "Erlaubt: a-z, 0-9, - (Max 39 Zeichen)";
+        }
+    }
+
+    function copyToClip(id) {
+        const val = document.getElementById(id).value;
+        if(val) {
+            navigator.clipboard.writeText(val);
+            alert("Kopiert!");
+        }
+    }
+
+    function saveConf() {
+        const t = document.getElementById('topic').value.trim();
+        const p = document.getElementById('pass').value.trim();
+        
+        if(t.length > 40) return alert("Topic zu lang!");
+        if(!t || !p) return alert("Bitte Topic und Passwort ausfüllen!");
+
+        localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
+        toggleSettings();
+    }
+
+    function previewFile() {
+        const file = document.getElementById('fileInput').files[0];
+        document.getElementById('filePreview').innerText = file ? `Ausgewählt: ${file.name}` : "";
+    }
+
+    // --- CRYPTO & SEND LOGIC (Bleibt wie vorher) ---
+    const enc = new TextEncoder();
     
     function bufferToBase64(buffer) {
         return new Promise((resolve) => {
@@ -56,36 +166,25 @@
         });
     }
 
+    async function getKey(password, salt) {
+        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+        return window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    }
+
     async function encryptText(text, password) {
         const salt = window.crypto.getRandomValues(new Uint8Array(16));
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const key = await getKey(password, salt);
         const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(text));
-        
         const buffer = new Uint8Array(salt.byteLength + iv.byteLength + encrypted.byteLength);
         buffer.set(salt, 0); buffer.set(iv, 16); buffer.set(new Uint8Array(encrypted), 28);
         return await bufferToBase64(buffer);
     }
 
-    // --- APP LOGIC ---
-    if(localStorage.getItem('oma_sender_conf')) {
-        document.getElementById('setupBox').classList.add('hidden');
-        document.getElementById('sendBox').classList.remove('hidden');
-    }
-
-    function saveConf() {
-        const t = document.getElementById('topic').value;
-        const p = document.getElementById('pass').value;
-        if(t && p) {
-            localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
-            location.reload();
-        }
-    }
-    
-    function clearConf() { localStorage.removeItem('oma_sender_conf'); location.reload(); }
-
     async function send() {
-        const conf = JSON.parse(localStorage.getItem('oma_sender_conf'));
+        const currentConf = JSON.parse(localStorage.getItem('oma_sender_conf'));
+        if(!currentConf || !currentConf.t || !currentConf.p) return alert("Bitte erst Einstellungen (Zahnrad) prüfen!");
+
         const sender = document.getElementById('senderName').value || "Jemand";
         const text = document.getElementById('msgText').value;
         const fileInput = document.getElementById('fileInput');
@@ -98,39 +197,29 @@
         btn.innerText = "Verschlüssle...";
 
         try {
-            // 1. Nutzdaten vorbereiten
             const payload = { sender: sender, text: text };
             const jsonStr = JSON.stringify(payload);
-            
-            // 2. Text verschlüsseln
-            const encryptedData = await encryptText(jsonStr, conf.p);
+            const encryptedData = await encryptText(jsonStr, currentConf.p);
 
             btn.innerText = "Sende...";
             
-            // 3. Entscheidung: Mit Bild oder ohne?
             if (fileInput.files[0]) {
-                // === MIT BILD (Upload als File, Text im Header) ===
-                // Wichtig: Der verschlüsselte String muss in den "Title" Header, 
-                // weil der Body jetzt das Bild ist.
-                await fetch(`https://ntfy.sh/${conf.t}`, {
+                await fetch(`https://ntfy.sh/${currentConf.t}`, {
                     method: 'PUT',
                     body: fileInput.files[0],
-                    headers: {
-                        'Title': encryptedData, // Hier steckt der verschlüsselte Text!
-                        'Filename': 'foto.jpg'
-                    }
+                    headers: { 'Title': encryptedData, 'Filename': 'foto.jpg' }
                 });
             } else {
-                // === NUR TEXT (Standard) ===
-                await fetch(`https://ntfy.sh/${conf.t}`, {
+                await fetch(`https://ntfy.sh/${currentConf.t}`, {
                     method: 'POST',
-                    body: encryptedData // Text ist der Body
+                    body: encryptedData
                 });
             }
 
             status.innerText = "✅ Gesendet!";
             document.getElementById('msgText').value = "";
             document.getElementById('fileInput').value = "";
+            document.getElementById('filePreview').innerText = "";
             setTimeout(() => { status.innerText=""; btn.innerText="Absenden 🚀"; btn.disabled=false; }, 2000);
 
         } catch(e) {
