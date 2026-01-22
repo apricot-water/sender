@@ -3,141 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Nachricht an Oma</title>
+<title>Familien Chat</title>
 <style>
-    /* === MODERN THEME VARIABLES === */
+    /* === VARIABLES & THEME === */
     :root {
-        --bg-app: #f2f2f7;
-        --bg-card: #ffffff;
-        --text-main: #000000;
-        --text-sub: #8e8e93;
-        --input-bg: #e5e5ea;
-        --accent: #007aff;
-        --accent-gradient: linear-gradient(135deg, #007aff, #005ecb);
-        --danger: #ff3b30;
-        --radius: 16px;
+        --bg-app: #f2f2f7; --bg-card: #ffffff; --text-main: #000000; --text-sub: #8e8e93;
+        --input-bg: #e5e5ea; --accent: #007aff; --danger: #ff3b30; --sidebar-bg: #ffffff;
     }
-
     body.dark {
-        --bg-app: #000000;
-        --bg-card: #1c1c1e;
-        --text-main: #ffffff;
-        --text-sub: #98989f;
-        --input-bg: #2c2c2e;
-        --accent: #0a84ff;
+        --bg-app: #000000; --bg-card: #1c1c1e; --text-main: #ffffff; --text-sub: #98989f;
+        --input-bg: #2c2c2e; --accent: #0a84ff; --sidebar-bg: #1c1c1e;
     }
-
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg-app); color: var(--text-main); height: 100dvh; width: 100vw; overflow: hidden; display: flex; justify-content: center; }
 
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: var(--bg-app);
-        color: var(--text-main);
-        margin: 0; padding: 0;
-        /* WICHTIG: Kein Scrollen auf dem Body */
-        height: 100dvh; 
-        width: 100vw;
-        overflow: hidden;
-        display: flex; justify-content: center;
-    }
-
-    /* === APP FRAME === */
-    .app-wrapper {
-        width: 100%; max-width: 600px;
-        background: var(--bg-card);
-        display: flex; flex-direction: column;
-        height: 100%;
-        position: relative; /* Wichtig für Modal */
-        overflow: hidden;   /* Wichtig damit Modal nicht sichtbar drunter hängt */
-        box-shadow: 0 0 20px rgba(0,0,0,0.1);
-    }
-
+    /* === LAYOUT === */
+    .app-wrapper { width: 100%; max-width: 600px; background: var(--bg-card); display: flex; flex-direction: column; height: 100%; position: relative; box-shadow: 0 0 20px rgba(0,0,0,0.1); overflow: hidden; }
+    
     /* === HEADER === */
-    .app-header {
-        flex: 0 0 auto; /* Darf nicht schrumpfen */
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 15px 20px;
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--input-bg);
-        z-index: 10;
-    }
-    .app-title { font-size: 17px; font-weight: 700; }
-    .btn-icon { background: none; border: none; cursor: pointer; color: var(--accent); padding: 5px; }
+    .app-header { flex: 0 0 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--input-bg); z-index: 20; background: var(--bg-card); }
+    .header-title { font-weight: 700; font-size: 17px; }
+    .btn-icon { background: none; border: none; cursor: pointer; color: var(--accent); padding: 8px; display: flex; align-items: center; justify-content: center; }
 
-    /* === SCROLL CONTENT === */
-    .content-area {
-        flex: 1; 
-        overflow-y: auto; /* Nur HIER darf gescrollt werden */
-        padding: 20px;
-        display: flex; flex-direction: column; gap: 20px;
-        -webkit-overflow-scrolling: touch;
-    }
+    /* === SIDEBAR (MENU) === */
+    .sidebar-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+    .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+    
+    .sidebar { position: absolute; top: 0; left: 0; bottom: 0; width: 280px; background: var(--sidebar-bg); z-index: 51; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); padding-top: 60px; display: flex; flex-direction: column; }
+    .sidebar.open { transform: translateX(0); }
+    
+    .menu-item { padding: 15px 20px; font-size: 18px; font-weight: 500; border-bottom: 1px solid var(--input-bg); cursor: pointer; display: flex; align-items: center; gap: 15px; }
+    .menu-item:active { background: var(--input-bg); }
+    .menu-item.active { color: var(--accent); background: rgba(0,122,255,0.1); }
+    
+    /* === TABS (CONTENT) === */
+    .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; height: 100%; }
+    .tab-content.active { display: flex; }
 
-    /* === INPUTS === */
-    input, textarea {
-        width: 100%; background: var(--input-bg); border: none; color: var(--text-main);
-        padding: 16px; border-radius: 12px; font-size: 17px; font-family: inherit; resize: none;
-    }
+    /* === SENDER STYLES === */
+    .scroll-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    input, textarea { width: 100%; background: var(--input-bg); border: none; color: var(--text-main); padding: 16px; border-radius: 12px; font-size: 17px; font-family: inherit; resize: none; }
     input:focus, textarea:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
     .label-small { font-size: 13px; color: var(--text-sub); margin-left: 12px; margin-bottom: 6px; font-weight: 500; text-transform: uppercase; }
-
-    /* === MEDIA BOX === */
-    .media-upload {
-        background: var(--input-bg); border-radius: 12px; padding: 20px;
-        text-align: center; cursor: pointer; border: 2px dashed rgba(128,128,128,0.3);
-        transition: 0.2s;
-    }
-    .media-upload:active { background: rgba(128,128,128,0.1); }
+    .media-upload { background: var(--input-bg); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; border: 2px dashed rgba(128,128,128,0.3); }
     .media-preview-img { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; display: none; margin-top: 10px; }
-
-    /* === BOTTOM BAR === */
-    .bottom-bar {
-        flex: 0 0 auto; padding: 20px;
-        background: var(--bg-card); border-top: 1px solid var(--input-bg);
-        /* Keyboard fix iOS */
-        padding-bottom: calc(20px + env(safe-area-inset-bottom));
-    }
-    .btn-primary {
-        width: 100%; background: var(--accent-gradient); color: white;
-        font-size: 17px; font-weight: 600; padding: 14px; border: none; border-radius: 12px;
-        cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-    }
-    .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
-    .btn-primary:disabled { opacity: 0.5; cursor: default; }
-
-    /* === SETTINGS MODAL (OVERLAY) === */
-    #settingsModal {
-        position: absolute; 
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: var(--bg-card);
-        z-index: 50;
-        display: flex; flex-direction: column;
-        
-        /* Animation: Slide Up */
-        transform: translateY(100%);
-        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-    }
-    #settingsModal.open { transform: translateY(0); }
-
-    .setting-item { background: var(--input-bg); border-radius: 10px; padding: 15px; margin-bottom: 15px; }
-    .setting-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
-    .copy-link { color: var(--accent); cursor: pointer; }
+    .bottom-bar { padding: 20px; border-top: 1px solid var(--input-bg); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+    .btn-primary { width: 100%; background: linear-gradient(135deg, #007aff, #005ecb); color: white; font-size: 17px; font-weight: 600; padding: 14px; border: none; border-radius: 12px; cursor: pointer; }
     
-    /* Toggle Switch */
-    .switch-row { display: flex; justify-content: space-between; align-items: center; }
-    .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-    .slider:before { position: absolute; content: ""; height: 24px; width: 24px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-    input:checked + .slider { background-color: var(--accent); }
-    input:checked + .slider:before { transform: translateX(22px); }
+    /* === VIEWER STYLES (Mini Version of empfänger.html) === */
+    .viewer-container { flex: 1; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; color: white; text-align: center; padding: 10px; }
+    .viewer-img { max-width: 100%; max-height: 50vh; object-fit: contain; border-radius: 10px; margin-bottom: 15px; display: none; }
+    .viewer-text { font-size: 24px; font-weight: bold; line-height: 1.3; max-height: 40vh; overflow-y: auto; width: 100%; }
+    .viewer-meta { position: absolute; top: 10px; width: 100%; text-align: center; color: #666; font-size: 12px; }
+    .viewer-nav { position: absolute; top: 50%; width: 100%; display: flex; justify-content: space-between; padding: 0 10px; pointer-events: none; }
+    .nav-btn { pointer-events: auto; background: rgba(255,255,255,0.2); border: none; color: white; font-size: 24px; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .nav-btn:active { background: rgba(255,255,255,0.4); }
 
-    /* Toast */
-    #toast {
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
-        background: rgba(0,0,0,0.85); color: white; padding: 15px 25px; border-radius: 30px;
-        font-weight: 600; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 100;
-    }
+    /* === SETTINGS MODAL === */
+    #settingsModal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-card); z-index: 100; transform: translateY(100%); transition: transform 0.3s; display: flex; flex-direction: column; }
+    #settingsModal.open { transform: translateY(0); }
+    .setting-row { padding: 15px; border-bottom: 1px solid var(--input-bg); }
+    
+    #toast { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9); background: rgba(0,0,0,0.85); color: white; padding: 15px 25px; border-radius: 30px; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 200; }
     #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 </style>
 </head>
@@ -147,121 +74,161 @@
     
     <!-- HEADER -->
     <header class="app-header">
-        <div class="app-title">👵 an Oma</div>
-        <!-- Modernes Zahnrad Icon -->
-        <button class="btn-icon" onclick="toggleSettings(true)">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <button class="btn-icon" onclick="toggleSidebar(true)">
+            <!-- Hamburger Icon -->
+            <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
+        <div class="header-title" id="pageTitle">Nachricht schreiben</div>
+        <button class="btn-icon" onclick="toggleSettings(true)">⚙️</button>
     </header>
 
-    <!-- SETTINGS MODAL -->
+    <!-- SIDEBAR -->
+    <div class="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+    <div class="sidebar">
+        <div style="padding: 0 20px 20px 20px; font-weight:bold; font-size:20px; color:var(--text-sub)">Menü</div>
+        <div class="menu-item active" onclick="switchTab('send')">✍️ Schreiben</div>
+        <div class="menu-item" onclick="switchTab('view')">👀 Omas Sicht</div>
+        <div style="flex:1"></div>
+        <div class="menu-item" style="font-size:14px; color:var(--text-sub)" onclick="toggleDarkMode()">🌙 Dark Mode umschalten</div>
+    </div>
+
+    <!-- TAB: SENDER -->
+    <div id="tab-send" class="tab-content active">
+        <div class="scroll-area">
+            <div>
+                <div class="label-small">Dein Name</div>
+                <input id="senderName" placeholder="Name">
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column;">
+                <div class="label-small">Nachricht</div>
+                <textarea id="msgText" placeholder="Hallo Oma..." style="flex:1; min-height:150px;"></textarea>
+            </div>
+            <div class="media-upload" onclick="document.getElementById('fileInput').click()">
+                <div style="font-size:24px; opacity:0.5">📷</div>
+                <div id="mediaText" style="font-weight:600; color:var(--accent); margin-top:5px">Foto anhängen</div>
+                <img id="imagePreview" class="media-preview-img">
+                <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile()">
+            </div>
+        </div>
+        <div class="bottom-bar">
+            <button id="btnSend" class="btn-primary" onclick="send()">Senden 🚀</button>
+        </div>
+    </div>
+
+    <!-- TAB: VIEWER -->
+    <div id="tab-view" class="tab-content">
+        <div class="viewer-container">
+            <div class="viewer-meta" id="viewerMeta">Lade Daten...</div>
+            <img id="viewerImg" class="viewer-img">
+            <div id="viewerText" class="viewer-text"></div>
+            
+            <div class="viewer-nav">
+                <button class="nav-btn" onclick="viewerNext(-1)">❮</button>
+                <button class="nav-btn" onclick="viewerNext(1)">❯</button>
+            </div>
+        </div>
+        <div style="padding:10px; text-align:center; font-size:11px; color:var(--text-sub); background:#000;">
+            Vorschau (Aktualisiert alle 30m via GitHub)
+        </div>
+    </div>
+
+    <!-- SETTINGS -->
     <div id="settingsModal">
         <header class="app-header">
-            <div class="app-title">Einstellungen</div>
+            <div class="header-title">Einstellungen</div>
             <button class="btn-icon" onclick="saveConf()">Fertig</button>
         </header>
-        <div class="content-area">
+        <div class="scroll-area">
+            <div class="label-small">Kanal Name (ntfy)</div>
+            <input id="confTopic" placeholder="oma_geheim">
+            <div class="label-small" style="margin-top:15px">Passwort</div>
+            <input id="confPass" type="text" placeholder="Geheim">
             
-            <div class="setting-item switch-row">
-                <span>🌙 Dark Mode</span>
-                <label class="switch"><input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()"><span class="slider"></span></label>
-            </div>
-
-            <div class="setting-item">
-                <div class="setting-header">
-                    <span>Kanal Name</span>
-                    <span class="copy-link" onclick="copyToClip('topic')">Kopieren</span>
-                </div>
-                <input id="topic" placeholder="oma_geheim" oninput="validateTopic(this)" style="font-family:monospace">
-                <div id="topicWarn" style="font-size:11px; margin-top:5px; color:var(--text-sub);">Max. 39 Zeichen</div>
-            </div>
-
-            <div class="setting-item">
-                <div class="setting-header">
-                    <span>Passwort</span>
-                    <span class="copy-link" onclick="copyToClip('pass')">Kopieren</span>
-                </div>
-                <input id="pass" type="text" placeholder="Geheim">
-            </div>
+            <hr style="border:0; border-top:1px solid var(--input-bg); margin: 20px 0;">
+            <div class="label-small">GitHub User</div>
+            <input id="confGhUser" placeholder="z.B. deinUser">
+            <div class="label-small" style="margin-top:15px">GitHub Repo</div>
+            <input id="confGhRepo" placeholder="z.B. oma-chat">
+            <div class="label-small" style="margin-top:15px">GitHub Token (Read-Only)</div>
+            <input id="confGhToken" type="password" placeholder="github_pat_...">
+            <div style="font-size:11px; color:var(--text-sub); margin-top:5px">Benötigt für den Verlauf ("Omas Sicht").</div>
         </div>
     </div>
 
-    <!-- MAIN CHAT -->
-    <div class="content-area">
-        <div>
-            <div class="label-small">Absender</div>
-            <input id="senderName" placeholder="Dein Name">
-        </div>
-
-        <div style="flex:1; display:flex; flex-direction:column;">
-            <div class="label-small">Nachricht</div>
-            <textarea id="msgText" placeholder="Schreib was..." style="flex:1; min-height:120px;"></textarea>
-        </div>
-
-        <div class="media-upload" onclick="document.getElementById('fileInput').click()">
-            <div style="font-size:24px; opacity:0.5">📷</div>
-            <div id="mediaText" style="font-weight:600; color:var(--accent); margin-top:5px">Foto hinzufügen</div>
-            <img id="imagePreview" class="media-preview-img">
-            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="previewFile()">
-        </div>
-    </div>
-
-    <!-- FOOTER -->
-    <div class="bottom-bar">
-        <button id="btnSend" class="btn-primary" onclick="send()">
-            Senden 🚀
-        </button>
-    </div>
-
-    <!-- NOTIFICATION -->
     <div id="toast">Nachricht gesendet!</div>
-
 </div>
 
 <script>
-      // --- MAGIC LINK AUTO-LOGIN (Ganz oben einfügen) ---
-    (function checkMagicLink() {
-        // Wir schauen, ob im Link hinter #config= etwas steht
+    // --- 1. MAGIC LINK & CONFIG ---
+    let conf = { t: '', p: '', gu: '', gr: '', gt: '' };
+
+    (function initConfig() {
+        // Load from storage
+        try { Object.assign(conf, JSON.parse(localStorage.getItem('oma_conf_v2') || '{}')); } catch(e){}
+
+        // Check Magic Link (#config=BASE64)
         const hash = window.location.hash;
         if (hash.startsWith('#config=')) {
             try {
-                // Den Teil nach dem = holen
-                const base64Str = hash.substring(8);
-                // Base64 zu Text decodieren (atob)
-                const jsonStr = atob(base64Str);
-                const conf = JSON.parse(jsonStr);
-                
-                // Prüfen ob Format stimmt
-                if(conf.t && conf.p) {
-                    localStorage.setItem('oma_sender_conf', JSON.stringify(conf));
-                    // URL säubern (damit man das Passwort nicht mehr sieht)
-                    history.replaceState(null, null, window.location.pathname);
-                    // Seite neu laden damit die Werte in die Felder kommen
-                    location.reload(); 
-                }
-            } catch (e) {
-                console.error("Magic Link ungültig", e);
-                alert("Der Link war fehlerhaft.");
-            }
+                const json = JSON.parse(atob(hash.substring(8)));
+                // Merge old and new (allows updating just one field)
+                Object.assign(conf, json);
+                localStorage.setItem('oma_conf_v2', JSON.stringify(conf));
+                history.replaceState(null, null, window.location.pathname);
+                alert("Einstellungen importiert! 🎉");
+            } catch(e) { alert("Link fehlerhaft."); }
         }
+
+        // Fill settings inputs
+        document.getElementById('confTopic').value = conf.t || '';
+        document.getElementById('confPass').value = conf.p || '';
+        document.getElementById('confGhUser').value = conf.gu || '';
+        document.getElementById('confGhRepo').value = conf.gr || '';
+        document.getElementById('confGhToken').value = conf.gt || '';
+
+        // Check dark mode
+        if (localStorage.getItem('darkmode') === 'true') document.body.classList.add('dark');
     })();
 
-    // --- BASIC SETUP ---
-    let conf = JSON.parse(localStorage.getItem('oma_sender_conf')) || { t: '', p: '' };
-    document.getElementById('topic').value = conf.t;
-    document.getElementById('pass').value = conf.p;
-    
-    if (localStorage.getItem('darkmode') === 'true') {
-        document.body.classList.add('dark');
-        document.getElementById('darkModeToggle').checked = true;
+    function saveConf() {
+        conf.t = document.getElementById('confTopic').value.trim();
+        conf.p = document.getElementById('confPass').value.trim();
+        conf.gu = document.getElementById('confGhUser').value.trim();
+        conf.gr = document.getElementById('confGhRepo').value.trim();
+        conf.gt = document.getElementById('confGhToken').value.trim();
+        localStorage.setItem('oma_conf_v2', JSON.stringify(conf));
+        toggleSettings(false);
+        // Reload viewer if active
+        if(activeTab === 'view') loadViewerData();
     }
-    if (!conf.t || !conf.p) toggleSettings(true);
 
-    // --- UI FUNCTIONS ---
-    function toggleSettings(forceOpen = false) {
-        const m = document.getElementById('settingsModal');
-        if (forceOpen) m.classList.add('open');
-        else m.classList.toggle('open');
+    // --- 2. UI NAVIGATION ---
+    let activeTab = 'send';
+    function toggleSidebar(open) {
+        const s = document.querySelector('.sidebar');
+        const o = document.querySelector('.sidebar-overlay');
+        if(open) { s.classList.add('open'); o.classList.add('open'); }
+        else { s.classList.remove('open'); o.classList.remove('open'); }
+    }
+    
+    function toggleSettings(open) {
+        document.getElementById('settingsModal').classList.toggle('open', open);
+    }
+
+    function switchTab(tab) {
+        activeTab = tab;
+        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        document.querySelectorAll('.menu-item').forEach(e => e.classList.remove('active'));
+        event.currentTarget.classList.add('active'); // Highlight menu item
+        
+        toggleSidebar(false);
+        
+        if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
+        if(tab === 'view') {
+            document.getElementById('pageTitle').innerText = "Omas Sicht";
+            loadViewerData();
+        }
     }
 
     function toggleDarkMode() {
@@ -269,80 +236,143 @@
         localStorage.setItem('darkmode', document.body.classList.contains('dark'));
     }
 
-    function validateTopic(input) {
-        const val = input.value;
-        const warn = document.getElementById('topicWarn');
-        if (val.length > 39) {
-            input.value = val.substring(0, 39);
-            warn.style.color = 'var(--danger)'; warn.innerText = "Limit erreicht!";
-        } else if (/[^a-zA-Z0-9-_]/.test(val)) {
-            warn.style.color = 'orange'; warn.innerText = "Nur a-z, 0-9, - und _";
-        } else {
-            warn.style.color = 'var(--text-sub)'; warn.innerText = "Max. 39 Zeichen";
-        }
-    }
-
-    function copyToClip(id) {
-        navigator.clipboard.writeText(document.getElementById(id).value);
-        showToast("Kopiert!");
-    }
-
-    function saveConf() {
-        const t = document.getElementById('topic').value.trim();
-        const p = document.getElementById('pass').value.trim();
-        if(t.length > 40) return alert("Topic zu lang!");
-        if(!t || !p) return alert("Bitte ausfüllen!");
-        localStorage.setItem('oma_sender_conf', JSON.stringify({t, p}));
-        document.getElementById('settingsModal').classList.remove('open');
-    }
-
-    function previewFile() {
-        const file = document.getElementById('fileInput').files[0];
-        const img = document.getElementById('imagePreview');
-        if (file) { img.src = URL.createObjectURL(file); img.style.display = 'block'; document.getElementById('mediaText').innerText = "Foto ändern"; }
-        else { img.style.display = 'none'; document.getElementById('mediaText').innerText = "Foto hinzufügen"; }
-    }
-
     function showToast(msg) {
         const t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show');
         setTimeout(() => t.classList.remove('show'), 2000);
     }
 
-    // --- LOGIC (SAME AS BEFORE) ---
-    const enc = new TextEncoder();
-    function bufferToBase64(buffer) { return new Promise(r => { const b=new Blob([buffer]); const reader=new FileReader(); reader.onload=()=>r(reader.result.split(',')[1]); reader.readAsDataURL(b); }); }
-    async function getKey(p,s){ const k=await window.crypto.subtle.importKey("raw",enc.encode(p),{name:"PBKDF2"},false,["deriveKey"]); return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); }
-    async function encryptText(t,p){ const s=window.crypto.getRandomValues(new Uint8Array(16)); const iv=window.crypto.getRandomValues(new Uint8Array(12)); const k=await getKey(p,s); const e=await window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv},k,enc.encode(t)); const b=new Uint8Array(s.byteLength+iv.byteLength+e.byteLength); b.set(s,0); b.set(iv,16); b.set(new Uint8Array(e),28); return await bufferToBase64(b); }
+    // --- 3. CRYPTO UTILS ---
+    const enc = new TextEncoder(); const dec = new TextDecoder();
+    async function getKey(p, s){ const k=await window.crypto.subtle.importKey("raw",enc.encode(p),{name:"PBKDF2"},false,["deriveKey"]); return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); }
+    async function bufferToBase64(buf) { return new Promise(r => { const b=new Blob([buf]); const rd=new FileReader(); rd.onload=()=>r(rd.result.split(',')[1]); rd.readAsDataURL(b); }); }
+    
+    async function encryptText(txt, pass){ 
+        const s=window.crypto.getRandomValues(new Uint8Array(16)); const iv=window.crypto.getRandomValues(new Uint8Array(12)); 
+        const k=await getKey(pass,s); const e=await window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv},k,enc.encode(txt)); 
+        const b=new Uint8Array(s.byteLength+iv.byteLength+e.byteLength); b.set(s,0); b.set(iv,16); b.set(new Uint8Array(e),28); 
+        return await bufferToBase64(b); 
+    }
+
+    async function decryptText(b64, pass) {
+        try {
+            const bin = atob(b64); const bytes = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+            const s=bytes.slice(0,16), iv=bytes.slice(16,28), data=bytes.slice(28);
+            const k=await getKey(pass,s); 
+            return dec.decode(await window.crypto.subtle.decrypt({name:"AES-GCM",iv:iv},k,data));
+        } catch(e){ return null; }
+    }
+
+    // --- 4. SENDER LOGIC ---
+    function previewFile() {
+        const f = document.getElementById('fileInput').files[0];
+        const img = document.getElementById('imagePreview');
+        if(f){ img.src = URL.createObjectURL(f); img.style.display='block'; document.getElementById('mediaText').innerText="Ändern"; }
+        else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
+    }
 
     async function send() {
-        const conf = JSON.parse(localStorage.getItem('oma_sender_conf'));
-        if(!conf || !conf.t || !conf.p) return alert("Einstellungen prüfen!");
-        
-        const sender = document.getElementById('senderName').value || "Jemand";
+        if(!conf.t || !conf.p) return alert("Bitte erst Einstellungen prüfen!");
+        const name = document.getElementById('senderName').value || "Familie";
         const text = document.getElementById('msgText').value;
         const file = document.getElementById('fileInput').files[0];
-        const btn = document.getElementById('btnSend');
-
-        if(!text && !file) return showToast("Text oder Bild fehlt!");
-
-        btn.disabled = true; btn.innerText = "Sende...";
+        
+        if(!text && !file) return showToast("Leer?");
+        const btn = document.getElementById('btnSend'); btn.disabled=true; btn.innerText="Verschlüssele...";
 
         try {
-            const encData = await encryptText(JSON.stringify({sender, text}), conf.p);
+            const payload = JSON.stringify({ sender: name, text: text, timestamp: Date.now() });
+            const encData = await encryptText(payload, conf.p);
             
-            if (file) {
-                await fetch(`https://ntfy.sh/${conf.t}`, { method: 'PUT', body: file, headers: { 'Title': encData, 'Filename': 'foto.jpg' } });
+            btn.innerText="Sende...";
+            if(file) {
+                await fetch(`https://ntfy.sh/${conf.t}`, { method:'PUT', body:file, headers: {'Title': encData, 'Filename':'img.jpg'} });
             } else {
-                await fetch(`https://ntfy.sh/${conf.t}`, { method: 'POST', body: encData });
+                await fetch(`https://ntfy.sh/${conf.t}`, { method:'POST', body:encData });
+            }
+            showToast("Gesendet! ✅");
+            document.getElementById('msgText').value="";
+            document.getElementById('fileInput').value="";
+            previewFile();
+        } catch(e) { alert("Fehler: "+e); }
+        btn.disabled=false; btn.innerText="Senden 🚀";
+    }
+
+    // --- 5. VIEWER LOGIC (Simplified) ---
+    let viewerMsgs = [];
+    let viewerIdx = 0;
+
+    async function loadViewerData() {
+        const m = document.getElementById('viewerMeta');
+        if(!conf.gu || !conf.gr || !conf.gt) {
+            m.innerText = "Fehler: GitHub Infos fehlen in Einstellungen!";
+            document.getElementById('viewerText').innerText = "Bitte GitHub Token in den Einstellungen hinterlegen, um den Verlauf zu sehen.";
+            return;
+        }
+        
+        m.innerText = "Lade Verlauf...";
+        viewerMsgs = [];
+        
+        try {
+            // Fetch from GitHub
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
+            const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3.raw' }});
+            
+            if(!resp.ok) throw new Error("GitHub Zugriff verweigert");
+            
+            const rawData = await resp.json();
+            
+            // Decrypt Loop
+            for(let item of rawData) {
+                if(!item.enc) continue;
+                const jsonStr = await decryptText(item.enc, conf.p);
+                if(jsonStr) {
+                    try {
+                        const c = JSON.parse(jsonStr);
+                        // Combine logic: GitHub base64 image > Text only
+                        viewerMsgs.push({
+                            ts: item.timestamp,
+                            sender: c.sender || '?',
+                            text: c.text || '',
+                            img: item.img || null
+                        });
+                    } catch(e){}
+                }
+            }
+            
+            viewerMsgs.sort((a,b) => a.ts - b.ts);
+            
+            if(viewerMsgs.length > 0) {
+                viewerIdx = viewerMsgs.length - 1; // Start at newest
+                updateViewer();
+            } else {
+                m.innerText = "Archiv leer.";
+                document.getElementById('viewerText').innerText = "Noch keine Nachrichten im Verlauf.";
             }
 
-            showToast("Gesendet! ✅");
-            document.getElementById('msgText').value = "";
-            document.getElementById('fileInput').value = "";
-            previewFile();
-            btn.innerText = "Senden 🚀"; btn.disabled = false;
         } catch(e) {
-            alert("Fehler: " + e.message); btn.disabled = false;
+            m.innerText = "Fehler beim Laden";
+            document.getElementById('viewerText').innerText = e.message + "\n\n(Prüfe Token und Repo-Name)";
+        }
+    }
+
+    function updateViewer() {
+        if(viewerMsgs.length === 0) return;
+        const msg = viewerMsgs[viewerIdx];
+        
+        document.getElementById('viewerText').innerText = msg.text;
+        const img = document.getElementById('viewerImg');
+        if(msg.img) { img.src = msg.img; img.style.display = 'block'; }
+        else { img.style.display = 'none'; }
+        
+        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
+        document.getElementById('viewerMeta').innerText = `${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})`;
+    }
+
+    function viewerNext(dir) {
+        const next = viewerIdx + dir;
+        if(next >= 0 && next < viewerMsgs.length) {
+            viewerIdx = next;
+            updateViewer();
         }
     }
 </script>
