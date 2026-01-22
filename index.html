@@ -37,15 +37,16 @@
         <button onclick="clearConf()" style="background:#666; font-size:12px;">Einstellungen zurücksetzen</button>
     </div>
 
+<!-- ... (HTML Teil bleibt gleich) ... -->
+
 <script>
-    // --- CRYPTO LOGIC (GLEICH WIE EMPFÄNGER) ---
+    // --- CRYPTO LOGIC (GLEICH) ---
     const enc = new TextEncoder();
     async function getKey(password, salt) {
         const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
         return window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
     }
     
-    // Base64 Converter Helper
     function bufferToBase64(buffer) {
         return new Promise((resolve) => {
             const blob = new Blob([buffer]);
@@ -83,28 +84,6 @@
     
     function clearConf() { localStorage.removeItem('oma_sender_conf'); location.reload(); }
 
-    // Bild verkleinern (WICHTIG für ntfy Free Limit, JSON darf nicht riesig werden)
-    function resizeImage(file, callback) {
-        if(!file) return callback(null);
-        const reader = new FileReader();
-        reader.onload = e => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                // Max 800px Breite, 0.6 Qualität -> hält den String klein genug für HTTP POST
-                const maxW = 800; 
-                const scale = Math.min(1, maxW / img.width);
-                canvas.width = img.width * scale;
-                canvas.height = img.height * scale;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                callback(canvas.toDataURL('image/jpeg', 0.6));
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    }
-
     async function send() {
         const conf = JSON.parse(localStorage.getItem('oma_sender_conf'));
         const sender = document.getElementById('senderName').value || "Jemand";
@@ -118,37 +97,47 @@
         btn.disabled = true;
         btn.innerText = "Verschlüssle...";
 
-        resizeImage(fileInput.files[0], async (base64Img) => {
-            // Das Datenpaket bauen
-            const payload = {
-                sender: sender,
-                text: text,
-                image: base64Img // Ist null, wenn kein Bild gewählt
-            };
+        try {
+            // 1. Nutzdaten vorbereiten
+            const payload = { sender: sender, text: text };
+            const jsonStr = JSON.stringify(payload);
+            
+            // 2. Text verschlüsseln
+            const encryptedData = await encryptText(jsonStr, conf.p);
 
-            try {
-                // ALLES Verschlüsseln
-                const jsonStr = JSON.stringify(payload);
-                const encryptedData = await encryptText(jsonStr, conf.p);
-
-                btn.innerText = "Sende...";
-                
-                // An ntfy schicken (als reinen Text-Body)
+            btn.innerText = "Sende...";
+            
+            // 3. Entscheidung: Mit Bild oder ohne?
+            if (fileInput.files[0]) {
+                // === MIT BILD (Upload als File, Text im Header) ===
+                // Wichtig: Der verschlüsselte String muss in den "Title" Header, 
+                // weil der Body jetzt das Bild ist.
+                await fetch(`https://ntfy.sh/${conf.t}`, {
+                    method: 'PUT',
+                    body: fileInput.files[0],
+                    headers: {
+                        'Title': encryptedData, // Hier steckt der verschlüsselte Text!
+                        'Filename': 'foto.jpg'
+                    }
+                });
+            } else {
+                // === NUR TEXT (Standard) ===
                 await fetch(`https://ntfy.sh/${conf.t}`, {
                     method: 'POST',
-                    body: encryptedData
+                    body: encryptedData // Text ist der Body
                 });
-
-                status.innerText = "✅ Gesendet!";
-                document.getElementById('msgText').value = "";
-                document.getElementById('fileInput').value = "";
-                setTimeout(() => { status.innerText=""; btn.innerText="Absenden 🚀"; btn.disabled=false; }, 2000);
-
-            } catch(e) {
-                alert("Fehler: " + e.message);
-                btn.disabled = false;
             }
-        });
+
+            status.innerText = "✅ Gesendet!";
+            document.getElementById('msgText').value = "";
+            document.getElementById('fileInput').value = "";
+            setTimeout(() => { status.innerText=""; btn.innerText="Absenden 🚀"; btn.disabled=false; }, 2000);
+
+        } catch(e) {
+            alert("Fehler: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Absenden 🚀";
+        }
     }
 </script>
 </body>
