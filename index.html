@@ -219,6 +219,33 @@
 </div>
 
 <script>
+      // --- MAGIC LINK AUTO-LOGIN (Ganz oben einfügen) ---
+    (function checkMagicLink() {
+        // Wir schauen, ob im Link hinter #config= etwas steht
+        const hash = window.location.hash;
+        if (hash.startsWith('#config=')) {
+            try {
+                // Den Teil nach dem = holen
+                const base64Str = hash.substring(8);
+                // Base64 zu Text decodieren (atob)
+                const jsonStr = atob(base64Str);
+                const conf = JSON.parse(jsonStr);
+                
+                // Prüfen ob Format stimmt
+                if(conf.t && conf.p) {
+                    localStorage.setItem('oma_sender_conf', JSON.stringify(conf));
+                    // URL säubern (damit man das Passwort nicht mehr sieht)
+                    history.replaceState(null, null, window.location.pathname);
+                    // Seite neu laden damit die Werte in die Felder kommen
+                    location.reload(); 
+                }
+            } catch (e) {
+                console.error("Magic Link ungültig", e);
+                alert("Der Link war fehlerhaft.");
+            }
+        }
+    })();
+
     // --- BASIC SETUP ---
     let conf = JSON.parse(localStorage.getItem('oma_sender_conf')) || { t: '', p: '' };
     document.getElementById('topic').value = conf.t;
