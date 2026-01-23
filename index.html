@@ -195,36 +195,27 @@
 
     <div id="toast">Nachricht gesendet!</div>
 </div>
-
 <script>
     // --- 1. MAGIC LINK & CONFIG ---
     let conf = { t: '', p: '', gu: '', gr: '', gt: '' };
 
     (function initConfig() {
-        // Load from storage
         try { Object.assign(conf, JSON.parse(localStorage.getItem('oma_conf_v2') || '{}')); } catch(e){}
-
-        // Check Magic Link (#config=BASE64)
         const hash = window.location.hash;
         if (hash.startsWith('#config=')) {
             try {
                 const json = JSON.parse(atob(hash.substring(8)));
-                // Merge old and new (allows updating just one field)
                 Object.assign(conf, json);
                 localStorage.setItem('oma_conf_v2', JSON.stringify(conf));
                 history.replaceState(null, null, window.location.pathname);
                 alert("Einstellungen importiert! 🎉");
             } catch(e) { alert("Link fehlerhaft."); }
         }
-
-        // Fill settings inputs
         document.getElementById('confTopic').value = conf.t || '';
         document.getElementById('confPass').value = conf.p || '';
         document.getElementById('confGhUser').value = conf.gu || '';
         document.getElementById('confGhRepo').value = conf.gr || '';
         document.getElementById('confGhToken').value = conf.gt || '';
-
-        // Check dark mode
         if (localStorage.getItem('darkmode') === 'true') document.body.classList.add('dark');
     })();
 
@@ -236,8 +227,7 @@
         conf.gt = document.getElementById('confGhToken').value.trim();
         localStorage.setItem('oma_conf_v2', JSON.stringify(conf));
         toggleSettings(false);
-        // Reload viewer if active
-        if(activeTab === 'view') loadViewerData();
+        if(activeTab === 'view') { loadViewerData(); startLiveViewer(); }
     }
 
     // --- 2. UI NAVIGATION ---
@@ -258,7 +248,6 @@
         document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
         document.getElementById('tab-' + tab).classList.add('active');
         document.querySelectorAll('.menu-item').forEach(e => e.classList.remove('active'));
-        // Event target fix (falls durch klick ausgelöst)
         if(event && event.currentTarget) event.currentTarget.classList.add('active'); 
         
         toggleSidebar(false);
@@ -266,8 +255,8 @@
         if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
         if(tab === 'view') {
             document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
-            loadViewerData(); // Lädt Archiv
-            startLiveViewer(); // Startet Live Stream <--- NEU
+            loadViewerData(); 
+            startLiveViewer(); 
         }
     }
     
@@ -281,7 +270,7 @@
         setTimeout(() => t.classList.remove('show'), 2000);
     }
 
-    // --- 3. CRYPTO UTILS (UPDATED für Dateien) ---
+    // --- 3. CRYPTO UTILS ---
     const enc = new TextEncoder(); const dec = new TextDecoder();
 
     async function getKey(p, s){ 
@@ -289,7 +278,6 @@
         return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); 
     }
 
-    // Hilfsfunktion: ArrayBuffer zusammenkleben (Salt + IV + Data)
     function concatBuffers(salt, iv, data) {
         const tmp = new Uint8Array(salt.byteLength + iv.byteLength + data.byteLength);
         tmp.set(new Uint8Array(salt), 0);
@@ -298,17 +286,14 @@
         return tmp.buffer;
     }
 
-    // Verschlüsselt Text -> Base64 String
     async function encryptText(txt, pass){ 
         const raw = enc.encode(txt);
         const buf = await encryptData(raw, pass);
-        // Buffer zu Base64 String
         let binary = ''; const bytes = new Uint8Array(buf);
         for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
         return btoa(binary);
     }
 
-    // Verschlüsselt Binärdaten (Bild) -> ArrayBuffer
     async function encryptData(dataBuffer, pass) {
         const s = window.crypto.getRandomValues(new Uint8Array(16)); 
         const iv = window.crypto.getRandomValues(new Uint8Array(12)); 
@@ -317,7 +302,6 @@
         return concatBuffers(s, iv, e);
     }
 
-    // Entschlüsseln (für Viewer)
     async function decryptData(buffer, pass) {
         try {
             const bytes = new Uint8Array(buffer);
@@ -329,7 +313,6 @@
         } catch(e) { console.error("Decrypt Fail", e); return null; }
     }
     
-    // Wrapper für Text-Decrypt
     async function decryptText(b64, pass) {
         try {
             const binStr = atob(b64);
@@ -339,7 +322,7 @@
             return decBuf ? dec.decode(decBuf) : null;
         } catch(e) { return null; }
     }
-    // Hilfsfunktion: Base64 zu ArrayBuffer (Wichtig für Bild-Decryption)
+    
     function base64ToBuffer(b64) {
         const bin = atob(b64);
         const len = bin.length;
@@ -348,9 +331,8 @@
         return bytes.buffer;
     }
 
-    // --- 4. SENDER LOGIC (UPDATED) ---
-    // (compressImage Funktion bleibt gleich wie vorher)
-    function compressImage(file) { /* ... Dein Compress Code von vorhin ... */ 
+    // --- 4. SENDER LOGIC ---
+    function compressImage(file) { 
         return new Promise((resolve, reject) => {
             const reader = new FileReader(); reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -359,7 +341,7 @@
                     const canvas = document.createElement('canvas');
                     const MAX = 1200; 
                     let w=img.width, h=img.height; 
-                    if(w>h){if(w>MAX){h*=MAX/w;w=MAX;}}else{if(h>MAX){w*=MAX/h;h=MAX;}} // Simple resize logic
+                    if(w>h){if(w>MAX){h*=MAX/w;w=MAX;}}else{if(h>MAX){w*=MAX/h;h=MAX;}} 
                     canvas.width=w; canvas.height=h; 
                     const ctx=canvas.getContext("2d"); ctx.drawImage(img,0,0,w,h);
                     canvas.toBlob((b)=>resolve(b),'image/jpeg',0.7);
@@ -376,7 +358,6 @@
         
         if(!text && !fileInput) return showToast("Leer?");
 
-        // UI Setup (Overlay anzeigen...)
         const overlay = document.getElementById('progressOverlay');
         const status = document.getElementById('progressStatus');
         const bar = document.getElementById('progressBar');
@@ -384,29 +365,20 @@
         overlay.classList.add('open'); bar.style.width='0%'; perc.innerText='0%';
 
         try {
-            // 1. Text Payload vorbereiten
             const payload = JSON.stringify({ sender: name, text: text, timestamp: Date.now() });
             const encTitle = await encryptText(payload, conf.p);
             
-            let dataToSend = encTitle; // Standard: Nur Text senden
+            let dataToSend = encTitle; 
             
-            // 2. Bild verarbeiten (Falls vorhanden)
             if(fileInput) {
                 status.innerText = "Komprimiere..."; bar.style.width='20%';
                 const compressedBlob = await compressImage(fileInput);
-                
                 status.innerText = "Verschlüssele Bild..."; bar.style.width='40%';
-                
-                // Blob zu ArrayBuffer
                 const fileBuf = await compressedBlob.arrayBuffer();
-                // Buffer VERSCHLÜSSELN
                 const encFileBuf = await encryptData(fileBuf, conf.p);
-                
-                // Verschlüsselte Daten senden wir als Blob
                 dataToSend = new Blob([encFileBuf]);
             }
 
-            // 3. Upload
             status.innerText = "Lade hoch...";
             await new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
@@ -414,11 +386,11 @@
                 
                 if (fileInput) {
                     xhr.open('PUT', url);
-                    xhr.setRequestHeader('Title', encTitle); // Text im Header
-                    xhr.setRequestHeader('Filename', 'secure.bin'); // Dateiname egal
+                    xhr.setRequestHeader('Title', encTitle);
+                    xhr.setRequestHeader('Filename', 'secure.bin');
                 } else {
                     xhr.open('POST', url);
-                    xhr.setRequestHeader('Title', 'Message'); // Dummy Title bei Text-only
+                    xhr.setRequestHeader('Title', 'Message');
                 }
 
                 xhr.upload.onprogress = (e) => {
@@ -432,7 +404,6 @@
                 xhr.send(dataToSend);
             });
 
-            // Success UI
             bar.style.width='100%'; status.innerText="Fertig!";
             setTimeout(() => {
                 overlay.classList.remove('open'); showToast("Sicher gesendet! 🔒");
@@ -445,8 +416,6 @@
         }
     }
 
-
-    // --- 4. SENDER LOGIC ---
     function previewFile() {
         const f = document.getElementById('fileInput').files[0];
         const img = document.getElementById('imagePreview');
@@ -454,13 +423,12 @@
         else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
     }
 
-    // --- 5. VIEWER LOGIC (Simplified) ---
+    // --- 5. VIEWER LOGIC ---
     let viewerMsgs = [];
     let viewerIdx = 0;
-      // NEU: Blacklist
     let viewerHiddenSet = new Set();
 
-   async function loadViewerData() {
+    async function loadViewerData() {
         const m = document.getElementById('viewerMeta');
         if(!conf.gu || !conf.gr || !conf.gt) {
             m.innerText = "GitHub Daten fehlen."; return;
@@ -468,10 +436,9 @@
         
         m.innerText = "Lade Verlauf...";
         viewerMsgs = [];
-        viewerHiddenSet.clear(); // WICHTIG: Reset bei jedem Neuladen
+        viewerHiddenSet.clear(); 
         
         try {
-            // Cache Buster
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
             const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
             const resp = await fetch(url, { headers: header, cache: "no-store" });
@@ -480,7 +447,6 @@
             
             const fileData = await resp.json();
             
-            // Blob Load Logic (>1MB)
             let rawB64 = fileData.content;
             if (!rawB64 && fileData.sha) {
                 const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
@@ -497,21 +463,19 @@
             const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
             for(let item of rawData) {
-                // LOGIK UPDATE: Erst prüfen, ob hidden -> dann auf Blacklist
+                // Blacklist füllen
                 if(item.hidden) {
                     viewerHiddenSet.add(item.timestamp);
                     continue; 
                 }
                 if(!item.enc) continue;
 
-                // 1. Text entschlüsseln
                 const jsonStr = await decryptText(item.enc, conf.p);
                 if(jsonStr) {
                     try {
                         const c = JSON.parse(jsonStr);
                         let finalImg = null;
 
-                        // 2. Bild entschlüsseln
                         if (item.img) {
                              try {
                                 const encBuf = base64ToBuffer(item.img);
@@ -534,16 +498,19 @@
                 }
             }
             
+            // --- RACE CONDITION FIX ---
+            // Wir filtern jetzt nochmal alles raus, was vielleicht durch den Live-Stream
+            // reingekommen ist, während wir das Archiv geladen haben.
+            viewerMsgs = viewerMsgs.filter(m => !viewerHiddenSet.has(m.ts));
+            // ---------------------------
+            
             viewerMsgs.sort((a,b) => a.ts - b.ts);
-
-if(viewerMsgs.length > 0) {
+            
+            if(viewerMsgs.length > 0) {
                 viewerIdx = viewerMsgs.length - 1; 
                 updateViewerUI();
             } else {
-                // HIER NICHTS MEHR TUN, wenn wir live sind!
-                // Wenn wir "Archiv leer" schreiben, überschreiben wir ggf. den Live-Status.
-                // Besser:
-                if(document.getElementById('viewerMeta').innerText === "Lade Verlauf...") {
+                if(document.getElementById('viewerMeta').innerText.includes("Lade")) {
                      document.getElementById('viewerMeta').innerText = "Archiv leer (Warte auf Live...)";
                 }
                 document.getElementById('viewerText').innerText = "Keine Nachrichten im Archiv.";
@@ -555,161 +522,9 @@ if(viewerMsgs.length > 0) {
         }
     }
 
-    // --- DELETE LOGIC ---
-
-async function deleteMessage(ts) {
-        if(!confirm("Nachricht wirklich löschen?")) return;
-        
-        const btn = event.currentTarget;
-        const originalIcon = btn.innerHTML;
-        btn.innerHTML = "⏳"; 
-        
-        try {
-            // 1. Metadaten holen
-            // Cache-Buster (?t=...) damit wir nicht alte Daten laden
-            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
-            const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
-            
-            const resp = await fetch(url, { headers: header, cache: "no-store" });
-            if(!resp.ok) throw new Error(`GitHub Load Error: ${resp.status}`);
-            
-            const fileData = await resp.json();
-            
-            // === ROBUSTER LOAD FÜR GROSSE DATEIEN (>1MB) ===
-            let rawB64 = fileData.content; // Ist bei kleinen Dateien gefüllt, bei großen null/undefined
-
-            if (!rawB64 && fileData.sha) {
-                console.log("Datei > 1MB. Lade Blob via SHA...");
-                const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
-                const blobResp = await fetch(blobUrl, { headers: header, cache: "no-store" });
-                
-                if(!blobResp.ok) throw new Error(`Blob Load Error: ${blobResp.status}`);
-                
-                const blobData = await blobResp.json();
-                rawB64 = blobData.content;
-            }
-
-            if (!rawB64) {
-                console.error("FileData Debug:", fileData);
-                throw new Error("Konnte Dateiinhalt nicht laden (rawB64 leer).");
-            }
-            // ===============================================
-            
-            // Bereinigen und Parsen
-            const cleanB64 = rawB64.replace(/\s/g, ''); 
-            const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
-            
-            // 2. Soft Delete Logik
-            let foundIndex = content.findIndex(m => m.timestamp === ts);
-            
-            if(foundIndex !== -1) {
-                content[foundIndex].hidden = true; 
-            } else {
-                // Nur im Live-Cache? Dann hinzufügen und verstecken
-                const localMsg = viewerMsgs.find(m => m.ts === ts);
-                if(localMsg) {
-                    content.push({
-                        timestamp: ts,
-                        enc: localMsg.enc, // Den Original Encrypted String nehmen
-                        img: null, 
-                        hidden: true 
-                    });
-                    content.sort((a,b) => a.timestamp - b.timestamp);
-                }
-            }
-
-            // 3. Speichern
-            const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
-            
-            // PUT request an die ursprüngliche URL (contents/messages.json)
-            // Wichtig: Wir brauchen die URL ohne Cache-Parameter für den PUT
-            const putUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
-            
-            const updateBody = {
-                message: "Delete/Hide Message via App",
-                content: newContent,
-                sha: fileData.sha 
-            };
-
-            const putResp = await fetch(putUrl, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${conf.gt}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(updateBody)
-            });
-
-            if(!putResp.ok) throw new Error("GitHub Save Error");
-
-            // 4. Live Befehl
-            await fetch(`https://ntfy.sh/${conf.t}`, { 
-                method: 'POST', 
-                body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
-            });
-
-            // 5. UI Update
-            viewerMsgs = viewerMsgs.filter(m => m.ts !== ts);
-            updateViewerUI();
-
-            alert("Gelöscht! 🗑️");
-
-        } catch(e) {
-            console.error(e);
-            alert("Fehler: " + e.message);
-        }
-        if(btn) btn.innerHTML = originalIcon;
-    }
-    
-    // --- UPDATE VIEWER (UI Update) ---
-    // Ersetze deine alte updateViewer() Funktion hiermit:
-  // === UI UPDATE FUNKTION (Zeigt Bild + Lösch-Button) ===
-    function updateViewerUI() {
-        // Sicherheitscheck: Gibt es Nachrichten?
-        if(!viewerMsgs || viewerMsgs.length === 0) {
-            document.getElementById('viewerMeta').innerText = "Keine Nachrichten (Warte auf Live-Eingang...)";
-            document.getElementById('viewerText').innerText = "";
-            document.getElementById('viewerImg').style.display = 'none';
-            return;
-        }
-        
-        // Index im Rahmen halten
-        if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
-        if(viewerIdx < 0) viewerIdx = 0;
-
-        const msg = viewerMsgs[viewerIdx];
-        
-        // Text & Bild setzen
-        document.getElementById('viewerText').innerText = msg.text;
-        const img = document.getElementById('viewerImg');
-        if(msg.img) { img.src = msg.img; img.style.display = 'block'; }
-        else { img.style.display = 'none'; }
-        
-        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        
-        // WICHTIG: Hier wird der Button gebaut!
-        // Wir nutzen innerHTML, damit der Button klickbar ist.
-        const metaHtml = `
-            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
-                <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
-                <button onclick="deleteMessage(${msg.ts})" style="background:rgba(255,255,255,0.2); border:1px solid #666; color:white; border-radius:4px; cursor:pointer; font-size:16px; padding:2px 8px;">🗑️</button>
-            </div>
-        `;
-        document.getElementById('viewerMeta').innerHTML = metaHtml;
-    }
-    
-    // Kleiner Fix für loadViewerData, damit versteckte Nachrichten im Sender gar nicht erst angezeigt werden
-    // Suche in loadViewerData() nach der "viewerMsgs.push" Zeile und füge davor ein:
-    // if(c.hidden) continue;  <-- NEU
-
-    function viewerNext(dir) {
-        const next = viewerIdx + dir;
-        if(next >= 0 && next < viewerMsgs.length) {
-            viewerIdx = next;
-            updateViewer();
-        }
-    }
-// --- LIVE VIEWER LOGIC ---
+    // --- LIVE VIEWER ---
     let eventSource = null;
-
-function startLiveViewer() {
+    function startLiveViewer() {
         if(eventSource) return;
         if(!conf.t) return;
 
@@ -719,13 +534,10 @@ function startLiveViewer() {
         eventSource.onmessage = async (e) => {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
-                
-                // Delete Command Check
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
                         viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
-                        // Auch hier: Ab auf die Blacklist, falls er nochmal reinrutscht
                         viewerHiddenSet.add(cmd.ts);
                         updateViewerUI();
                         return;
@@ -733,18 +545,11 @@ function startLiveViewer() {
                 } catch(err){}
 
                 const ts = data.time;
-
-                // LOGIK UPDATE: Zombie Check gegen Blacklist
-                if(viewerHiddenSet.has(ts)) {
-                    console.log("Live Nachricht ignoriert (Hidden in Archiv):", ts);
-                    return;
-                }
-
+                if(viewerHiddenSet.has(ts)) return; // Zombie Check
                 if(viewerMsgs.some(m => m.ts === ts)) return;
 
                 let encPayload = data.attachment ? data.title : data.message;
                 let imgData = data.attachment ? data.attachment.url : null;
-                
                 if(!encPayload) return;
 
                 const jsonStr = await decryptText(encPayload, conf.p);
@@ -752,8 +557,6 @@ function startLiveViewer() {
                     try {
                         const c = JSON.parse(jsonStr);
                         let finalImg = null;
-
-                        // Bild entschlüsseln (Live URL)
                         if (imgData) {
                             try {
                                 const resp = await fetch(imgData);
@@ -775,27 +578,95 @@ function startLiveViewer() {
                         });
 
                         viewerMsgs.sort((a,b) => a.ts - b.ts);
-                        
-                        // Auto-Forward wenn man am Ende war
-                        if(viewerIdx >= viewerMsgs.length - 2) {
-                            viewerIdx = viewerMsgs.length - 1;
-                        }
+                        if(viewerIdx >= viewerMsgs.length - 2) viewerIdx = viewerMsgs.length - 1;
                         updateViewerUI();
-
                     } catch(e) { console.error(e); }
                 }
             }
         };
     }
-    // Hilfsfunktion: UI Update ohne Index-Reset
+
+    // --- DELETE LOGIC ---
+    async function deleteMessage(ts) {
+        if(!confirm("Nachricht wirklich löschen?")) return;
+        
+        const btn = event.currentTarget;
+        const originalIcon = btn.innerHTML;
+        btn.innerHTML = "⏳"; 
+        
+        try {
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
+            const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
+            
+            const resp = await fetch(url, { headers: header, cache: "no-store" });
+            if(!resp.ok) throw new Error(`GitHub Load Error: ${resp.status}`);
+            
+            const fileData = await resp.json();
+            let rawB64 = fileData.content; 
+            if (!rawB64 && fileData.sha) {
+                const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
+                const blobResp = await fetch(blobUrl, { headers: header, cache: "no-store" });
+                if(blobResp.ok) {
+                    const blobData = await blobResp.json();
+                    rawB64 = blobData.content;
+                }
+            }
+            if (!rawB64) throw new Error("Konnte Dateiinhalt nicht laden.");
+            
+            const cleanB64 = rawB64.replace(/\s/g, ''); 
+            const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
+            
+            let foundIndex = content.findIndex(m => m.timestamp === ts);
+            
+            if(foundIndex !== -1) {
+                content[foundIndex].hidden = true; 
+            } else {
+                const localMsg = viewerMsgs.find(m => m.ts === ts);
+                if(localMsg) {
+                    content.push({ timestamp: ts, enc: localMsg.enc, img: null, hidden: true });
+                    content.sort((a,b) => a.timestamp - b.timestamp);
+                }
+            }
+
+            const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
+            const putUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
+            const updateBody = {
+                message: "Delete/Hide Message via App",
+                content: newContent,
+                sha: fileData.sha 
+            };
+
+            const putResp = await fetch(putUrl, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${conf.gt}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateBody)
+            });
+
+            if(!putResp.ok) throw new Error("GitHub Save Error");
+
+            await fetch(`https://ntfy.sh/${conf.t}`, { 
+                method: 'POST', 
+                body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
+            });
+
+            // Lokal entfernen
+            viewerMsgs = viewerMsgs.filter(m => m.ts !== ts);
+            viewerHiddenSet.add(ts); // Auf die Blacklist setzen!
+            updateViewerUI();
+            alert("Gelöscht! 🗑️");
+
+        } catch(e) { console.error(e); alert("Fehler: " + e.message); }
+        if(btn) btn.innerHTML = originalIcon;
+    }
+
     function updateViewerUI() {
-        if(viewerMsgs.length === 0) {
-            document.getElementById('viewerMeta').innerText = "Warte auf Nachrichten...";
+        if(!viewerMsgs || viewerMsgs.length === 0) {
+            document.getElementById('viewerMeta').innerText = "Keine Nachrichten (Warte auf Live-Eingang...)";
             document.getElementById('viewerText').innerText = "";
             document.getElementById('viewerImg').style.display = 'none';
             return;
         }
-        // Index Bounds Check (falls wir gelöscht haben)
+        
         if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
         if(viewerIdx < 0) viewerIdx = 0;
 
@@ -807,18 +678,22 @@ function startLiveViewer() {
         
         const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
         
-        // Delete Button
         const metaHtml = `
             <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
                 <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
-                <button onclick="deleteMessage(${msg.ts})" style="background:none; border:none; cursor:pointer; font-size:16px;">🗑️</button>
+                <button onclick="deleteMessage(${msg.ts})" style="background:rgba(255,255,255,0.2); border:1px solid #666; color:white; border-radius:4px; cursor:pointer; font-size:16px; padding:2px 8px;">🗑️</button>
             </div>
         `;
         document.getElementById('viewerMeta').innerHTML = metaHtml;
     }
 
-
-    
+    function viewerNext(dir) {
+        const next = viewerIdx + dir;
+        if(next >= 0 && next < viewerMsgs.length) {
+            viewerIdx = next;
+            updateViewerUI(); // FIX: Hier stand vorher updateViewer()
+        }
+    }
 </script>
 </body>
 </html>
