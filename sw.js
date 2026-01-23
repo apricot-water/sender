@@ -24,10 +24,11 @@ self.addEventListener('push', function(event) {
   );
 });
 
-self.addEventListener('notificationclick', function(event) {
+
+    self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  // Beim Klick App öffnen
+  // KORREKTUR: Auf index.html oder ./ leiten, nicht sender.html
   event.waitUntil(
-    clients.openWindow('./sender.html')
+    clients.openWindow('./') 
   );
 });
