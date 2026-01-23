@@ -494,11 +494,12 @@
     }
 
     // --- DELETE LOGIC ---
-    async function deleteMessage(ts) {
+async function deleteMessage(ts) {
         if(!confirm("Nachricht wirklich löschen?")) return;
         
         const btn = event.currentTarget;
-        btn.innerHTML = "⏳"; // Lade-Indikator
+        const originalIcon = btn.innerHTML; // Icon merken
+        btn.innerHTML = "⏳"; 
         
         try {
             // 1. GitHub JSON laden (Wir brauchen den SHA Hash für das Update!)
@@ -510,8 +511,13 @@
             if(!resp.ok) throw new Error("GitHub Load Error");
             
             const fileData = await resp.json();
-            // Content ist base64, muss decoded werden
-            const content = JSON.parse(decodeURIComponent(escape(atob(fileData.content))));
+            
+            // === HIER WAR DER FEHLER ===
+            // GitHub fügt Zeilenumbrüche (\n) ein. Die müssen wir entfernen (.replace), 
+            // sonst stürzt atob ab.
+            const cleanB64 = fileData.content.replace(/\s/g, ''); 
+            const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
+            // ==========================
             
             // 2. Nachricht finden und verstecken
             let found = false;
@@ -519,14 +525,16 @@
                 if(m.timestamp === ts) { m.hidden = true; found = true; }
             });
             
-            if(!found) throw new Error("Nachricht nicht im Archiv gefunden (vielleicht noch nicht gesynct?)");
+            if(!found) throw new Error("Nachricht nicht im Archiv gefunden.");
 
             // 3. Zurück zu GitHub pushen
+            // Beim Encoden müssen wir auch auf UTF-8 achten
             const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
+            
             const updateBody = {
                 message: "Delete Message via App",
                 content: newContent,
-                sha: fileData.sha // WICHTIG!
+                sha: fileData.sha 
             };
 
             const putResp = await fetch(url, {
@@ -537,21 +545,22 @@
 
             if(!putResp.ok) throw new Error("GitHub Save Error");
 
-            // 4. Live-Befehl an ntfy senden (für sofortigen Effekt)
+            // 4. Live-Befehl an ntfy senden
             await fetch(`https://ntfy.sh/${conf.t}`, { 
                 method: 'POST', 
                 body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
             });
 
             alert("Gelöscht! 🗑️");
-            loadViewerData(); // Reload UI
+            loadViewerData(); 
 
         } catch(e) {
             alert("Fehler: " + e.message);
-            btn.innerHTML = "🗑️";
         }
+        btn.innerHTML = "🗑️"; // Icon zurücksetzen
     }
 
+    
     // --- UPDATE VIEWER (UI Update) ---
     // Ersetze deine alte updateViewer() Funktion hiermit:
     function updateViewer() {
