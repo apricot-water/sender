@@ -1,7 +1,7 @@
 {
   "name": "Familien Chat",
   "short_name": "Chat",
-  "start_url": "index.html",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#007aff",
