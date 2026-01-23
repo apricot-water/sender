@@ -258,17 +258,19 @@
         document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
         document.getElementById('tab-' + tab).classList.add('active');
         document.querySelectorAll('.menu-item').forEach(e => e.classList.remove('active'));
-        event.currentTarget.classList.add('active'); // Highlight menu item
+        // Event target fix (falls durch klick ausgelöst)
+        if(event && event.currentTarget) event.currentTarget.classList.add('active'); 
         
         toggleSidebar(false);
         
         if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
         if(tab === 'view') {
-            document.getElementById('pageTitle').innerText = "Omas Sicht";
-            loadViewerData();
+            document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
+            loadViewerData(); // Lädt Archiv
+            startLiveViewer(); // Startet Live Stream <--- NEU
         }
     }
-
+    
     function toggleDarkMode() {
         document.body.classList.toggle('dark');
         localStorage.setItem('darkmode', document.body.classList.contains('dark'));
@@ -494,15 +496,16 @@
     }
 
     // --- DELETE LOGIC ---
-async function deleteMessage(ts) {
+
+    async function deleteMessage(ts) {
         if(!confirm("Nachricht wirklich löschen?")) return;
         
         const btn = event.currentTarget;
-        const originalIcon = btn.innerHTML; // Icon merken
+        const originalIcon = btn.innerHTML;
         btn.innerHTML = "⏳"; 
         
         try {
-            // 1. GitHub JSON laden (Wir brauchen den SHA Hash für das Update!)
+            // 1. GitHub JSON laden
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
             const resp = await fetch(url, { 
                 headers: { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' }
@@ -511,28 +514,39 @@ async function deleteMessage(ts) {
             if(!resp.ok) throw new Error("GitHub Load Error");
             
             const fileData = await resp.json();
-            
-            // === HIER WAR DER FEHLER ===
-            // GitHub fügt Zeilenumbrüche (\n) ein. Die müssen wir entfernen (.replace), 
-            // sonst stürzt atob ab.
             const cleanB64 = fileData.content.replace(/\s/g, ''); 
             const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
-            // ==========================
             
-            // 2. Nachricht finden und verstecken
-            let found = false;
-            content.forEach(m => {
-                if(m.timestamp === ts) { m.hidden = true; found = true; }
-            });
+            // 2. Nachricht suchen ODER neu anlegen (Zombie-Schutz!)
+            let foundIndex = content.findIndex(m => m.timestamp === ts);
             
-            if(!found) throw new Error("Nachricht nicht im Archiv gefunden.");
+            if(foundIndex !== -1) {
+                // Fall A: Nachricht war schon im Archiv -> Verstecken
+                content[foundIndex].hidden = true;
+            } else {
+                // Fall B: Nachricht ist neu (nur Live). 
+                // Wir müssen sie als "hidden" ins Archiv schreiben, damit der Worker sie ignoriert!
+                // Wir suchen die Nachricht in unserem lokalen Viewer-Cache
+                const localMsg = viewerMsgs.find(m => m.ts === ts);
+                
+                if(localMsg) {
+                    content.push({
+                        timestamp: ts,
+                        enc: localMsg.enc, // Wir brauchen den encrypted string für die Struktur
+                        img: null, // Bild brauchen wir nicht speichern, ist eh gelöscht
+                        hidden: true // <--- DAS WICHTIGSTE
+                    });
+                    // Sortieren, damit die Ordnung stimmt
+                    content.sort((a,b) => a.timestamp - b.timestamp);
+                } else {
+                    console.warn("Nachricht lokal nicht gefunden, lösche blind.");
+                }
+            }
 
             // 3. Zurück zu GitHub pushen
-            // Beim Encoden müssen wir auch auf UTF-8 achten
             const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
-            
             const updateBody = {
-                message: "Delete Message via App",
+                message: "Delete/Hide Message via App",
                 content: newContent,
                 sha: fileData.sha 
             };
@@ -551,16 +565,17 @@ async function deleteMessage(ts) {
                 body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
             });
 
+            // 5. Lokal sofort entfernen (für schnelles Feedback)
+            viewerMsgs = viewerMsgs.filter(m => m.ts !== ts);
+            updateViewerUI();
+
             alert("Gelöscht! 🗑️");
-            loadViewerData(); 
 
         } catch(e) {
             alert("Fehler: " + e.message);
         }
-        btn.innerHTML = "🗑️"; // Icon zurücksetzen
+        if(btn) btn.innerHTML = originalIcon;
     }
-
-    
     // --- UPDATE VIEWER (UI Update) ---
     // Ersetze deine alte updateViewer() Funktion hiermit:
     function updateViewer() {
@@ -595,6 +610,102 @@ async function deleteMessage(ts) {
             updateViewer();
         }
     }
+// --- LIVE VIEWER LOGIC ---
+    let eventSource = null;
+
+    function startLiveViewer() {
+        if(eventSource) return; // Läuft schon
+        if(!conf.t) return;
+
+        console.log("Starte Live-Viewer...");
+        eventSource = new EventSource(`https://ntfy.sh/${conf.t}/sse?since=all`);
+        
+        eventSource.onmessage = async (e) => {
+            const data = JSON.parse(e.data);
+            if(data.event === 'message') {
+                
+                // 1. Check auf Delete-Command
+                try {
+                    const cmd = JSON.parse(data.message);
+                    if(cmd.cmd === 'DELETE') {
+                        // Nachricht lokal aus der Liste entfernen
+                        viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
+                        updateViewerUI(); // UI refreshen
+                        return;
+                    }
+                } catch(err){}
+
+                // 2. Normale Nachricht verarbeiten
+                const ts = data.time;
+                // Haben wir die schon? (Deduplizierung)
+                if(viewerMsgs.some(m => m.ts === ts)) return;
+
+                let encPayload = data.attachment ? data.title : data.message;
+                let imgData = data.attachment ? data.attachment.url : null;
+                
+                if(!encPayload) return;
+
+                // Entschlüsseln
+                const jsonStr = await decryptText(encPayload, conf.p);
+                if(jsonStr) {
+                    try {
+                        const c = JSON.parse(jsonStr);
+                        // Nachricht zur Liste hinzufügen
+                        viewerMsgs.push({
+                            ts: ts,
+                            sender: c.sender || '?',
+                            text: c.text || '',
+                            img: imgData || c.image || null, // Nimm Live-URL oder Base64
+                            enc: encPayload // Wichtig für Smart-Delete!
+                        });
+
+                        // Neu sortieren
+                        viewerMsgs.sort((a,b) => a.ts - b.ts);
+                        
+                        // Wenn wir gerade die neueste ansehen, spring mit
+                        if(viewerIdx >= viewerMsgs.length - 2) {
+                            viewerIdx = viewerMsgs.length - 1;
+                        }
+                        updateViewerUI(); // UI Refresh (statt updateViewer)
+
+                    } catch(e) { console.error(e); }
+                }
+            }
+        };
+    }
+
+    // Hilfsfunktion: UI Update ohne Index-Reset
+    function updateViewerUI() {
+        if(viewerMsgs.length === 0) {
+            document.getElementById('viewerMeta').innerText = "Warte auf Nachrichten...";
+            document.getElementById('viewerText').innerText = "";
+            document.getElementById('viewerImg').style.display = 'none';
+            return;
+        }
+        // Index Bounds Check (falls wir gelöscht haben)
+        if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
+        if(viewerIdx < 0) viewerIdx = 0;
+
+        const msg = viewerMsgs[viewerIdx];
+        document.getElementById('viewerText').innerText = msg.text;
+        const img = document.getElementById('viewerImg');
+        if(msg.img) { img.src = msg.img; img.style.display = 'block'; }
+        else { img.style.display = 'none'; }
+        
+        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        
+        // Delete Button
+        const metaHtml = `
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
+                <button onclick="deleteMessage(${msg.ts})" style="background:none; border:none; cursor:pointer; font-size:16px;">🗑️</button>
+            </div>
+        `;
+        document.getElementById('viewerMeta').innerHTML = metaHtml;
+    }
+
+
+    
 </script>
 </body>
 </html>
