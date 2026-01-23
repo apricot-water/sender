@@ -281,26 +281,162 @@
         setTimeout(() => t.classList.remove('show'), 2000);
     }
 
-    // --- 3. CRYPTO UTILS ---
+    // --- 3. CRYPTO UTILS (UPDATED für Dateien) ---
     const enc = new TextEncoder(); const dec = new TextDecoder();
-    async function getKey(p, s){ const k=await window.crypto.subtle.importKey("raw",enc.encode(p),{name:"PBKDF2"},false,["deriveKey"]); return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); }
-    async function bufferToBase64(buf) { return new Promise(r => { const b=new Blob([buf]); const rd=new FileReader(); rd.onload=()=>r(rd.result.split(',')[1]); rd.readAsDataURL(b); }); }
-    
-    async function encryptText(txt, pass){ 
-        const s=window.crypto.getRandomValues(new Uint8Array(16)); const iv=window.crypto.getRandomValues(new Uint8Array(12)); 
-        const k=await getKey(pass,s); const e=await window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv},k,enc.encode(txt)); 
-        const b=new Uint8Array(s.byteLength+iv.byteLength+e.byteLength); b.set(s,0); b.set(iv,16); b.set(new Uint8Array(e),28); 
-        return await bufferToBase64(b); 
+
+    async function getKey(p, s){ 
+        const k=await window.crypto.subtle.importKey("raw",enc.encode(p),{name:"PBKDF2"},false,["deriveKey"]); 
+        return window.crypto.subtle.deriveKey({name:"PBKDF2",salt:s,iterations:100000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); 
     }
 
+    // Hilfsfunktion: ArrayBuffer zusammenkleben (Salt + IV + Data)
+    function concatBuffers(salt, iv, data) {
+        const tmp = new Uint8Array(salt.byteLength + iv.byteLength + data.byteLength);
+        tmp.set(new Uint8Array(salt), 0);
+        tmp.set(new Uint8Array(iv), salt.byteLength);
+        tmp.set(new Uint8Array(data), salt.byteLength + iv.byteLength);
+        return tmp.buffer;
+    }
+
+    // Verschlüsselt Text -> Base64 String
+    async function encryptText(txt, pass){ 
+        const raw = enc.encode(txt);
+        const buf = await encryptData(raw, pass);
+        // Buffer zu Base64 String
+        let binary = ''; const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+    }
+
+    // Verschlüsselt Binärdaten (Bild) -> ArrayBuffer
+    async function encryptData(dataBuffer, pass) {
+        const s = window.crypto.getRandomValues(new Uint8Array(16)); 
+        const iv = window.crypto.getRandomValues(new Uint8Array(12)); 
+        const k = await getKey(pass, s); 
+        const e = await window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv}, k, dataBuffer); 
+        return concatBuffers(s, iv, e);
+    }
+
+    // Entschlüsseln (für Viewer)
+    async function decryptData(buffer, pass) {
+        try {
+            const bytes = new Uint8Array(buffer);
+            const s = bytes.slice(0,16);
+            const iv = bytes.slice(16,28);
+            const data = bytes.slice(28);
+            const k = await getKey(pass, s);
+            return await window.crypto.subtle.decrypt({name:"AES-GCM",iv:iv}, k, data);
+        } catch(e) { console.error("Decrypt Fail", e); return null; }
+    }
+    
+    // Wrapper für Text-Decrypt
     async function decryptText(b64, pass) {
         try {
-            const bin = atob(b64); const bytes = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-            const s=bytes.slice(0,16), iv=bytes.slice(16,28), data=bytes.slice(28);
-            const k=await getKey(pass,s); 
-            return dec.decode(await window.crypto.subtle.decrypt({name:"AES-GCM",iv:iv},k,data));
-        } catch(e){ return null; }
+            const binStr = atob(b64);
+            const buf = new Uint8Array(binStr.length);
+            for(let i=0; i<binStr.length; i++) buf[i] = binStr.charCodeAt(i);
+            const decBuf = await decryptData(buf.buffer, pass);
+            return decBuf ? dec.decode(decBuf) : null;
+        } catch(e) { return null; }
     }
+
+    // --- 4. SENDER LOGIC (UPDATED) ---
+    // (compressImage Funktion bleibt gleich wie vorher)
+    function compressImage(file) { /* ... Dein Compress Code von vorhin ... */ 
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader(); reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image(); img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX = 1200; 
+                    let w=img.width, h=img.height; 
+                    if(w>h){if(w>MAX){h*=MAX/w;w=MAX;}}else{if(h>MAX){w*=MAX/h;h=MAX;}} // Simple resize logic
+                    canvas.width=w; canvas.height=h; 
+                    const ctx=canvas.getContext("2d"); ctx.drawImage(img,0,0,w,h);
+                    canvas.toBlob((b)=>resolve(b),'image/jpeg',0.7);
+                };
+            };
+        });
+    }
+
+    async function send() {
+        if(!conf.t || !conf.p) return alert("Einstellungen prüfen!");
+        const name = document.getElementById('senderName').value || "Familie";
+        const text = document.getElementById('msgText').value;
+        const fileInput = document.getElementById('fileInput').files[0];
+        
+        if(!text && !fileInput) return showToast("Leer?");
+
+        // UI Setup (Overlay anzeigen...)
+        const overlay = document.getElementById('progressOverlay');
+        const status = document.getElementById('progressStatus');
+        const bar = document.getElementById('progressBar');
+        const perc = document.getElementById('progressPercent');
+        overlay.classList.add('open'); bar.style.width='0%'; perc.innerText='0%';
+
+        try {
+            // 1. Text Payload vorbereiten
+            const payload = JSON.stringify({ sender: name, text: text, timestamp: Date.now() });
+            const encTitle = await encryptText(payload, conf.p);
+            
+            let dataToSend = encTitle; // Standard: Nur Text senden
+            
+            // 2. Bild verarbeiten (Falls vorhanden)
+            if(fileInput) {
+                status.innerText = "Komprimiere..."; bar.style.width='20%';
+                const compressedBlob = await compressImage(fileInput);
+                
+                status.innerText = "Verschlüssele Bild..."; bar.style.width='40%';
+                
+                // Blob zu ArrayBuffer
+                const fileBuf = await compressedBlob.arrayBuffer();
+                // Buffer VERSCHLÜSSELN
+                const encFileBuf = await encryptData(fileBuf, conf.p);
+                
+                // Verschlüsselte Daten senden wir als Blob
+                dataToSend = new Blob([encFileBuf]);
+            }
+
+            // 3. Upload
+            status.innerText = "Lade hoch...";
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const url = `https://ntfy.sh/${conf.t}`;
+                
+                if (fileInput) {
+                    xhr.open('PUT', url);
+                    xhr.setRequestHeader('Title', encTitle); // Text im Header
+                    xhr.setRequestHeader('Filename', 'secure.bin'); // Dateiname egal
+                } else {
+                    xhr.open('POST', url);
+                    xhr.setRequestHeader('Title', 'Message'); // Dummy Title bei Text-only
+                }
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const vp = 40 + ((e.loaded/e.total)*60);
+                        bar.style.width = vp+'%'; perc.innerText = Math.round(vp)+'%';
+                    }
+                };
+                xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(xhr.status);
+                xhr.onerror = () => reject("Network Error");
+                xhr.send(dataToSend);
+            });
+
+            // Success UI
+            bar.style.width='100%'; status.innerText="Fertig!";
+            setTimeout(() => {
+                overlay.classList.remove('open'); showToast("Sicher gesendet! 🔒");
+                document.getElementById('msgText').value=""; document.getElementById('fileInput').value=""; 
+                document.getElementById('imagePreview').style.display='none';
+            }, 500);
+
+        } catch(e) {
+            alert("Fehler: " + e); overlay.classList.remove('open');
+        }
+    }
+
 
     // --- 4. SENDER LOGIC ---
     function previewFile() {
@@ -309,133 +445,6 @@
         if(f){ img.src = URL.createObjectURL(f); img.style.display='block'; document.getElementById('mediaText').innerText="Ändern"; }
         else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
     }
-
-// --- NEU: Bild Komprimierung ---
-    function compressImage(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1200; // Genug für Omas Tablet
-                    const scaleSize = MAX_WIDTH / img.width;
-                    const width = (scaleSize < 1) ? MAX_WIDTH : img.width;
-                    const height = (scaleSize < 1) ? img.height * scaleSize : img.height;
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext("2d");
-                    ctx.drawImage(img, 0, 0, width, height);
-                    
-                    // Export als JPEG mit 70% Qualität
-                    canvas.toBlob((blob) => {
-                        resolve(blob);
-                    }, 'image/jpeg', 0.7); 
-                };
-                img.onerror = (e) => reject(e);
-            };
-            reader.onerror = (e) => reject(e);
-        });
-    }
-
-    // --- NEU: Senden mit Progress ---
-    async function send() {
-        if(!conf.t || !conf.p) return alert("Bitte erst Einstellungen prüfen!");
-        
-        const name = document.getElementById('senderName').value || "Familie";
-        const text = document.getElementById('msgText').value;
-        const fileInput = document.getElementById('fileInput').files[0];
-        
-        if(!text && !fileInput) return showToast("Leer?");
-
-        // UI öffnen
-        const overlay = document.getElementById('progressOverlay');
-        const status = document.getElementById('progressStatus');
-        const bar = document.getElementById('progressBar');
-        const perc = document.getElementById('progressPercent');
-        
-        overlay.classList.add('open');
-        bar.style.width = '0%'; perc.innerText = '0%';
-        
-        try {
-            // Schritt 1: Bild verarbeiten
-            let fileToSend = null;
-            if(fileInput) {
-                status.innerText = "Komprimiere Bild...";
-                // Kleiner Fake-Fortschritt damit man sieht dass was passiert
-                bar.style.width = '20%'; 
-                fileToSend = await compressImage(fileInput);
-            }
-
-            // Schritt 2: Verschlüsseln
-            status.innerText = "Verschlüssele...";
-            bar.style.width = '40%';
-            
-            // Kleines Timeout damit UI rendern kann
-            await new Promise(r => setTimeout(r, 100));
-
-            const payload = JSON.stringify({ sender: name, text: text, timestamp: Date.now() });
-            const encData = await encryptText(payload, conf.p);
-
-            // Schritt 3: Upload mit XHR (für Progress Events)
-            status.innerText = "Lade hoch...";
-            
-            return new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                const url = `https://ntfy.sh/${conf.t}`;
-                
-                if (fileToSend) {
-                    xhr.open('PUT', url);
-                    xhr.setRequestHeader('Title', encData);
-                    xhr.setRequestHeader('Filename', 'img.jpg');
-                } else {
-                    xhr.open('POST', url);
-                }
-
-                // Progress Handler
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        // Wir starten visuell bei 40% (nach Crypto) und gehen bis 100%
-                        const realPercent = (e.loaded / e.total); 
-                        const visualPercent = 40 + (realPercent * 60); 
-                        bar.style.width = visualPercent + '%';
-                        perc.innerText = Math.round(visualPercent) + '%';
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        // Success
-                        bar.style.width = '100%';
-                        status.innerText = "Fertig!";
-                        setTimeout(() => {
-                            overlay.classList.remove('open');
-                            showToast("Gesendet! ✅");
-                            document.getElementById('msgText').value = "";
-                            document.getElementById('fileInput').value = "";
-                            previewFile();
-                            resolve();
-                        }, 500);
-                    } else {
-                        reject("Server Fehler: " + xhr.status);
-                    }
-                };
-
-                xhr.onerror = () => reject("Netzwerkfehler");
-                
-                // Senden
-                xhr.send(fileToSend ? fileToSend : encData);
-            });
-
-        } catch(e) {
-            alert("Fehler: " + e);
-            overlay.classList.remove('open');
-        }
-    }
-    
 
     // --- 5. VIEWER LOGIC (Simplified) ---
     let viewerMsgs = [];
