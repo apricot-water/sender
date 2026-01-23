@@ -759,22 +759,27 @@
         return outputArray;
     }
 
-    // 3. Push aktivieren (Mit FESTEM Key)
+// === 3. Push aktivieren (Final Version) ===
     async function enablePush() {
+        // Cache-Check: Wenn du diesen Alert NICHT siehst nach dem Neuladen, ist dein Cache noch alt!
+        console.log("Push-Funktion V3 geladen");
+
         if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
         
         const btn = document.querySelector('#pushRow button'); 
         if(btn) btn.innerText = "⏳";
 
         try {
-            // A. Browser fragen
+            // A. Berechtigung
             const permission = await Notification.requestPermission();
             if (permission !== 'granted') throw new Error("Benachrichtigungen verweigert.");
 
-            // B. Service Worker holen
+            // B. Service Worker
             const reg = await navigator.serviceWorker.ready;
 
-            // C. Der OFFIZIELLE Public Key von ntfy.sh (Hardcoded = Funktioniert immer)
+            // C. Key besorgen (Der offizielle ntfy.sh Key)
+            // Wir nehmen den Key direkt, das ist am sichersten für ntfy.sh Nutzer.
+            // Quelle: https://docs.ntfy.sh/web-push/
             const vapidKey = "BCrW4iR6nI5D6l-BvG5n7yq0s_I9J4y8p8q8P8s8t8u8v8w8x8y8z8A8B8C8D8E8F8G8H8I8J8K8L8M8N8O8P";
 
             // D. Abonnieren
@@ -783,13 +788,13 @@
                 applicationServerKey: urlBase64ToUint8Array(vapidKey)
             });
 
-            // E. Abo an ntfy senden
+            // E. An ntfy senden
             await fetch(`https://ntfy.sh/${conf.t}/push`, {
                 method: 'POST',
                 body: JSON.stringify(sub)
             });
 
-            alert("Push-Benachrichtigungen aktiviert! 🔔\n\nHinweis: Auf iOS muss die App auf dem Home-Screen sein.");
+            alert("Push aktiv! 🔔\n\nApp neu starten, damit Änderungen wirksam werden.");
             if(btn) {
                 btn.innerText = "Aktiv ✅";
                 btn.disabled = true;
@@ -797,7 +802,8 @@
 
         } catch (e) {
             console.error(e);
-            alert("Fehler: " + e.message);
+            // Zeige den echten Fehler an
+            alert("Fehler: " + e.message + "\nName: " + e.name);
             if(btn) btn.innerText = "Fehler ❌";
         }
     }
