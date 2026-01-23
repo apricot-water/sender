@@ -759,54 +759,56 @@
         return outputArray;
     }
 
-// === 3. Push aktivieren (Final Version) ===
-    async function enablePush() {
-        // Cache-Check: Wenn du diesen Alert NICHT siehst nach dem Neuladen, ist dein Cache noch alt!
-        console.log("Push-Funktion V3 geladen");
+// === 3. Push aktivieren (Korrigierte Version) ===
+async function enablePush() {
+    console.log("Starte Push-Aktivierung...");
 
-        if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
+    if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
+    
+    const btn = document.querySelector('#pushRow button'); 
+    if(btn) btn.innerText = "⏳";
+
+    try {
+        // A. Berechtigung
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') throw new Error("Benachrichtigungen verweigert.");
+
+        // B. Service Worker
+        const reg = await navigator.serviceWorker.ready;
+
+        // C. Key AUTOMATISCH von ntfy.sh holen (statt Hardcoding)
+        // Dies verhindert den 'atob' Fehler und falsche Keys
+        const keyResp = await fetch('https://ntfy.sh/key/vapid');
+        if(!keyResp.ok) throw new Error("Konnte VAPID Key nicht laden");
+        const vapidKey = await keyResp.text();
         
-        const btn = document.querySelector('#pushRow button'); 
-        if(btn) btn.innerText = "⏳";
+        // Entferne mögliche Leerzeichen/Newlines aus dem Key
+        const cleanKey = vapidKey.trim().replace(/\n/g, '');
 
-        try {
-            // A. Berechtigung
-            const permission = await Notification.requestPermission();
-            if (permission !== 'granted') throw new Error("Benachrichtigungen verweigert.");
+        // D. Abonnieren
+        const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(cleanKey)
+        });
 
-            // B. Service Worker
-            const reg = await navigator.serviceWorker.ready;
+        // E. An ntfy senden
+        await fetch(`https://ntfy.sh/${conf.t}/push`, {
+            method: 'POST',
+            body: JSON.stringify(sub)
+        });
 
-            // C. Key besorgen (Der offizielle ntfy.sh Key)
-            // Wir nehmen den Key direkt, das ist am sichersten für ntfy.sh Nutzer.
-            // Quelle: https://docs.ntfy.sh/web-push/
-            const vapidKey = "BCrW4iR6nI5D6l-BvG5n7yq0s_I9J4y8p8q8P8s8t8u8v8w8x8y8z8A8B8C8D8E8F8G8H8I8J8K8L8M8N8O8P";
-
-            // D. Abonnieren
-            const sub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidKey)
-            });
-
-            // E. An ntfy senden
-            await fetch(`https://ntfy.sh/${conf.t}/push`, {
-                method: 'POST',
-                body: JSON.stringify(sub)
-            });
-
-            alert("Push aktiv! 🔔\n\nApp neu starten, damit Änderungen wirksam werden.");
-            if(btn) {
-                btn.innerText = "Aktiv ✅";
-                btn.disabled = true;
-            }
-
-        } catch (e) {
-            console.error(e);
-            // Zeige den echten Fehler an
-            alert("Fehler: " + e.message + "\nName: " + e.name);
-            if(btn) btn.innerText = "Fehler ❌";
+        alert("Push aktiv! 🔔\n\nDu erhältst nun Benachrichtigungen.");
+        if(btn) {
+            btn.innerText = "Aktiv ✅";
+            btn.disabled = true;
         }
+
+    } catch (e) {
+        console.error(e);
+        alert("Fehler bei Push: " + e.message);
+        if(btn) btn.innerText = "Fehler ❌";
     }
+}
     
 </script>
 </body>
