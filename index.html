@@ -535,15 +535,20 @@
             }
             
             viewerMsgs.sort((a,b) => a.ts - b.ts);
-            
-            if(viewerMsgs.length > 0) {
+
+if(viewerMsgs.length > 0) {
                 viewerIdx = viewerMsgs.length - 1; 
                 updateViewerUI();
             } else {
-                m.innerText = "Archiv leer.";
-                document.getElementById('viewerText').innerText = "Keine Nachrichten.";
+                // HIER NICHTS MEHR TUN, wenn wir live sind!
+                // Wenn wir "Archiv leer" schreiben, überschreiben wir ggf. den Live-Status.
+                // Besser:
+                if(document.getElementById('viewerMeta').innerText === "Lade Verlauf...") {
+                     document.getElementById('viewerMeta').innerText = "Archiv leer (Warte auf Live...)";
+                }
+                document.getElementById('viewerText').innerText = "Keine Nachrichten im Archiv.";
             }
-
+            
         } catch(e) {
             m.innerText = "Ladefehler";
             document.getElementById('viewerText').innerText = e.message;
@@ -655,22 +660,36 @@ async function deleteMessage(ts) {
     
     // --- UPDATE VIEWER (UI Update) ---
     // Ersetze deine alte updateViewer() Funktion hiermit:
-    function updateViewer() {
-        if(viewerMsgs.length === 0) return;
+  // === UI UPDATE FUNKTION (Zeigt Bild + Lösch-Button) ===
+    function updateViewerUI() {
+        // Sicherheitscheck: Gibt es Nachrichten?
+        if(!viewerMsgs || viewerMsgs.length === 0) {
+            document.getElementById('viewerMeta').innerText = "Keine Nachrichten (Warte auf Live-Eingang...)";
+            document.getElementById('viewerText').innerText = "";
+            document.getElementById('viewerImg').style.display = 'none';
+            return;
+        }
+        
+        // Index im Rahmen halten
+        if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
+        if(viewerIdx < 0) viewerIdx = 0;
+
         const msg = viewerMsgs[viewerIdx];
         
+        // Text & Bild setzen
         document.getElementById('viewerText').innerText = msg.text;
         const img = document.getElementById('viewerImg');
         if(msg.img) { img.src = msg.img; img.style.display = 'block'; }
         else { img.style.display = 'none'; }
         
-        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
+        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
         
-        // NEU: Mülleimer Button hinzufügen
+        // WICHTIG: Hier wird der Button gebaut!
+        // Wir nutzen innerHTML, damit der Button klickbar ist.
         const metaHtml = `
             <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
                 <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
-                <button onclick="deleteMessage(${msg.ts})" style="background:none; border:none; cursor:pointer; font-size:16px;">🗑️</button>
+                <button onclick="deleteMessage(${msg.ts})" style="background:rgba(255,255,255,0.2); border:1px solid #666; color:white; border-radius:4px; cursor:pointer; font-size:16px; padding:2px 8px;">🗑️</button>
             </div>
         `;
         document.getElementById('viewerMeta').innerHTML = metaHtml;
