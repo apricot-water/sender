@@ -457,8 +457,10 @@
     // --- 5. VIEWER LOGIC (Simplified) ---
     let viewerMsgs = [];
     let viewerIdx = 0;
+      // NEU: Blacklist
+    let viewerHiddenSet = new Set();
 
-    async function loadViewerData() {
+   async function loadViewerData() {
         const m = document.getElementById('viewerMeta');
         if(!conf.gu || !conf.gr || !conf.gt) {
             m.innerText = "GitHub Daten fehlen."; return;
@@ -466,9 +468,10 @@
         
         m.innerText = "Lade Verlauf...";
         viewerMsgs = [];
+        viewerHiddenSet.clear(); // WICHTIG: Reset bei jedem Neuladen
         
         try {
-            // Cache Buster auch hier wichtig!
+            // Cache Buster
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
             const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
             const resp = await fetch(url, { headers: header, cache: "no-store" });
@@ -477,7 +480,7 @@
             
             const fileData = await resp.json();
             
-            // Logic für Content Load (auch hier Blob Support nötig falls >1MB)
+            // Blob Load Logic (>1MB)
             let rawB64 = fileData.content;
             if (!rawB64 && fileData.sha) {
                 const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
@@ -494,7 +497,12 @@
             const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
             for(let item of rawData) {
-                if(item.hidden || !item.enc) continue;
+                // LOGIK UPDATE: Erst prüfen, ob hidden -> dann auf Blacklist
+                if(item.hidden) {
+                    viewerHiddenSet.add(item.timestamp);
+                    continue; 
+                }
+                if(!item.enc) continue;
 
                 // 1. Text entschlüsseln
                 const jsonStr = await decryptText(item.enc, conf.p);
@@ -503,9 +511,8 @@
                         const c = JSON.parse(jsonStr);
                         let finalImg = null;
 
-                        // 2. Bild entschlüsseln (Falls vorhanden)
+                        // 2. Bild entschlüsseln
                         if (item.img) {
-                             // Im Archiv ist es immer Base64
                              try {
                                 const encBuf = base64ToBuffer(item.img);
                                 const decBuf = await decryptData(encBuf, conf.p);
@@ -683,7 +690,7 @@ async function deleteMessage(ts) {
 // --- LIVE VIEWER LOGIC ---
     let eventSource = null;
 
-  function startLiveViewer() {
+function startLiveViewer() {
         if(eventSource) return;
         if(!conf.t) return;
 
@@ -694,16 +701,26 @@ async function deleteMessage(ts) {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
                 
+                // Delete Command Check
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
                         viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
+                        // Auch hier: Ab auf die Blacklist, falls er nochmal reinrutscht
+                        viewerHiddenSet.add(cmd.ts);
                         updateViewerUI();
                         return;
                     }
                 } catch(err){}
 
                 const ts = data.time;
+
+                // LOGIK UPDATE: Zombie Check gegen Blacklist
+                if(viewerHiddenSet.has(ts)) {
+                    console.log("Live Nachricht ignoriert (Hidden in Archiv):", ts);
+                    return;
+                }
+
                 if(viewerMsgs.some(m => m.ts === ts)) return;
 
                 let encPayload = data.attachment ? data.title : data.message;
@@ -717,10 +734,9 @@ async function deleteMessage(ts) {
                         const c = JSON.parse(jsonStr);
                         let finalImg = null;
 
-                        // BILD ENTSCHLÜSSELN (LIVE)
+                        // Bild entschlüsseln (Live URL)
                         if (imgData) {
                             try {
-                                // Live ist es eine URL -> Fetch -> ArrayBuffer
                                 const resp = await fetch(imgData);
                                 const encBuf = await resp.arrayBuffer();
                                 const decBuf = await decryptData(encBuf, conf.p);
@@ -741,6 +757,7 @@ async function deleteMessage(ts) {
 
                         viewerMsgs.sort((a,b) => a.ts - b.ts);
                         
+                        // Auto-Forward wenn man am Ende war
                         if(viewerIdx >= viewerMsgs.length - 2) {
                             viewerIdx = viewerMsgs.length - 1;
                         }
