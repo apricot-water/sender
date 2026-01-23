@@ -339,6 +339,14 @@
             return decBuf ? dec.decode(decBuf) : null;
         } catch(e) { return null; }
     }
+    // Hilfsfunktion: Base64 zu ArrayBuffer (Wichtig für Bild-Decryption)
+    function base64ToBuffer(b64) {
+        const bin = atob(b64);
+        const len = bin.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes.buffer;
+    }
 
     // --- 4. SENDER LOGIC (UPDATED) ---
     // (compressImage Funktion bleibt gleich wie vorher)
@@ -453,36 +461,67 @@
     async function loadViewerData() {
         const m = document.getElementById('viewerMeta');
         if(!conf.gu || !conf.gr || !conf.gt) {
-            m.innerText = "Fehler: GitHub Infos fehlen in Einstellungen!";
-            document.getElementById('viewerText').innerText = "Bitte GitHub Token in den Einstellungen hinterlegen, um den Verlauf zu sehen.";
-            return;
+            m.innerText = "GitHub Daten fehlen."; return;
         }
         
         m.innerText = "Lade Verlauf...";
         viewerMsgs = [];
         
         try {
-            // Fetch from GitHub
-            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
-            const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3.raw' }});
+            // Cache Buster auch hier wichtig!
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
+            const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
+            const resp = await fetch(url, { headers: header, cache: "no-store" });
             
             if(!resp.ok) throw new Error("GitHub Zugriff verweigert");
             
-            const rawData = await resp.json();
+            const fileData = await resp.json();
             
-            // Decrypt Loop
+            // Logic für Content Load (auch hier Blob Support nötig falls >1MB)
+            let rawB64 = fileData.content;
+            if (!rawB64 && fileData.sha) {
+                const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
+                const blobResp = await fetch(blobUrl, { headers: header });
+                if(blobResp.ok) {
+                    const blobData = await blobResp.json();
+                    rawB64 = blobData.content;
+                }
+            }
+            
+            if(!rawB64) { m.innerText = "Archiv leer."; return; }
+
+            const cleanB64 = rawB64.replace(/\s/g, ''); 
+            const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
+            
             for(let item of rawData) {
-                if(!item.enc) continue;
+                if(item.hidden || !item.enc) continue;
+
+                // 1. Text entschlüsseln
                 const jsonStr = await decryptText(item.enc, conf.p);
                 if(jsonStr) {
                     try {
                         const c = JSON.parse(jsonStr);
-                        // Combine logic: GitHub base64 image > Text only
+                        let finalImg = null;
+
+                        // 2. Bild entschlüsseln (Falls vorhanden)
+                        if (item.img) {
+                             // Im Archiv ist es immer Base64
+                             try {
+                                const encBuf = base64ToBuffer(item.img);
+                                const decBuf = await decryptData(encBuf, conf.p);
+                                if(decBuf) {
+                                    const blob = new Blob([decBuf], {type: 'image/jpeg'});
+                                    finalImg = URL.createObjectURL(blob);
+                                }
+                             } catch(err) { console.error("Img Decrypt Error", err); }
+                        }
+
                         viewerMsgs.push({
                             ts: item.timestamp,
                             sender: c.sender || '?',
                             text: c.text || '',
-                            img: item.img || null
+                            img: finalImg, 
+                            enc: item.enc 
                         });
                     } catch(e){}
                 }
@@ -491,21 +530,20 @@
             viewerMsgs.sort((a,b) => a.ts - b.ts);
             
             if(viewerMsgs.length > 0) {
-                viewerIdx = viewerMsgs.length - 1; // Start at newest
+                viewerIdx = viewerMsgs.length - 1; 
                 updateViewerUI();
             } else {
                 m.innerText = "Archiv leer.";
-                document.getElementById('viewerText').innerText = "Noch keine Nachrichten im Verlauf.";
+                document.getElementById('viewerText').innerText = "Keine Nachrichten.";
             }
 
         } catch(e) {
-            m.innerText = "Fehler beim Laden";
-            document.getElementById('viewerText').innerText = e.message + "\n\n(Prüfe Token und Repo-Name)";
+            m.innerText = "Ladefehler";
+            document.getElementById('viewerText').innerText = e.message;
         }
     }
 
     // --- DELETE LOGIC ---
-
 
 async function deleteMessage(ts) {
         if(!confirm("Nachricht wirklich löschen?")) return;
@@ -515,57 +553,65 @@ async function deleteMessage(ts) {
         btn.innerHTML = "⏳"; 
         
         try {
-            // 1. Metadaten holen (wir brauchen den SHA)
-            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
+            // 1. Metadaten holen
+            // Cache-Buster (?t=...) damit wir nicht alte Daten laden
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
             const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
             
-            const resp = await fetch(url, { headers: header });
-            if(!resp.ok) throw new Error("GitHub Load Error: " + resp.status);
+            const resp = await fetch(url, { headers: header, cache: "no-store" });
+            if(!resp.ok) throw new Error(`GitHub Load Error: ${resp.status}`);
             
             const fileData = await resp.json();
             
-            // === FIX FÜR DATEIEN > 1MB ===
-            let rawB64 = fileData.content;
+            // === ROBUSTER LOAD FÜR GROSSE DATEIEN (>1MB) ===
+            let rawB64 = fileData.content; // Ist bei kleinen Dateien gefüllt, bei großen null/undefined
 
-            // Wenn content fehlt (weil Datei zu groß), holen wir ihn über die Blob-API
             if (!rawB64 && fileData.sha) {
-                console.log("Datei > 1MB, lade Blob...");
+                console.log("Datei > 1MB. Lade Blob via SHA...");
                 const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
-                const blobResp = await fetch(blobUrl, { headers: header });
-                if(blobResp.ok) {
-                    const blobData = await blobResp.json();
-                    rawB64 = blobData.content;
-                }
+                const blobResp = await fetch(blobUrl, { headers: header, cache: "no-store" });
+                
+                if(!blobResp.ok) throw new Error(`Blob Load Error: ${blobResp.status}`);
+                
+                const blobData = await blobResp.json();
+                rawB64 = blobData.content;
             }
 
-            if (!rawB64) throw new Error("Konnte Dateiinhalt nicht laden.");
-            // =============================
+            if (!rawB64) {
+                console.error("FileData Debug:", fileData);
+                throw new Error("Konnte Dateiinhalt nicht laden (rawB64 leer).");
+            }
+            // ===============================================
             
+            // Bereinigen und Parsen
             const cleanB64 = rawB64.replace(/\s/g, ''); 
             const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
-            // 2. Nachricht suchen & Soft Delete
+            // 2. Soft Delete Logik
             let foundIndex = content.findIndex(m => m.timestamp === ts);
             
             if(foundIndex !== -1) {
-                content[foundIndex].hidden = true; // Existierende markieren
+                content[foundIndex].hidden = true; 
             } else {
                 // Nur im Live-Cache? Dann hinzufügen und verstecken
                 const localMsg = viewerMsgs.find(m => m.ts === ts);
                 if(localMsg) {
                     content.push({
                         timestamp: ts,
-                        enc: localMsg.enc,
-                        img: null, // Bild sparen wir uns im Archiv, ist eh hidden
+                        enc: localMsg.enc, // Den Original Encrypted String nehmen
+                        img: null, 
                         hidden: true 
                     });
                     content.sort((a,b) => a.timestamp - b.timestamp);
                 }
             }
 
-            // 3. Zurück zu GitHub pushen
-            // (Die API erlaubt Updates bis ca 50-100MB via PUT, das sollte reichen)
+            // 3. Speichern
             const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
+            
+            // PUT request an die ursprüngliche URL (contents/messages.json)
+            // Wichtig: Wir brauchen die URL ohne Cache-Parameter für den PUT
+            const putUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
             
             const updateBody = {
                 message: "Delete/Hide Message via App",
@@ -573,7 +619,7 @@ async function deleteMessage(ts) {
                 sha: fileData.sha 
             };
 
-            const putResp = await fetch(url, {
+            const putResp = await fetch(putUrl, {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${conf.gt}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(updateBody)
@@ -599,8 +645,6 @@ async function deleteMessage(ts) {
         }
         if(btn) btn.innerHTML = originalIcon;
     }
-
-
     
     // --- UPDATE VIEWER (UI Update) ---
     // Ersetze deine alte updateViewer() Funktion hiermit:
@@ -639,8 +683,8 @@ async function deleteMessage(ts) {
 // --- LIVE VIEWER LOGIC ---
     let eventSource = null;
 
-    function startLiveViewer() {
-        if(eventSource) return; // Läuft schon
+  function startLiveViewer() {
+        if(eventSource) return;
         if(!conf.t) return;
 
         console.log("Starte Live-Viewer...");
@@ -650,20 +694,16 @@ async function deleteMessage(ts) {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
                 
-                // 1. Check auf Delete-Command
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
-                        // Nachricht lokal aus der Liste entfernen
                         viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
-                        updateViewerUI(); // UI refreshen
+                        updateViewerUI();
                         return;
                     }
                 } catch(err){}
 
-                // 2. Normale Nachricht verarbeiten
                 const ts = data.time;
-                // Haben wir die schon? (Deduplizierung)
                 if(viewerMsgs.some(m => m.ts === ts)) return;
 
                 let encPayload = data.attachment ? data.title : data.message;
@@ -671,35 +711,46 @@ async function deleteMessage(ts) {
                 
                 if(!encPayload) return;
 
-                // Entschlüsseln
                 const jsonStr = await decryptText(encPayload, conf.p);
                 if(jsonStr) {
                     try {
                         const c = JSON.parse(jsonStr);
-                        // Nachricht zur Liste hinzufügen
+                        let finalImg = null;
+
+                        // BILD ENTSCHLÜSSELN (LIVE)
+                        if (imgData) {
+                            try {
+                                // Live ist es eine URL -> Fetch -> ArrayBuffer
+                                const resp = await fetch(imgData);
+                                const encBuf = await resp.arrayBuffer();
+                                const decBuf = await decryptData(encBuf, conf.p);
+                                if(decBuf) {
+                                    const blob = new Blob([decBuf], {type: 'image/jpeg'});
+                                    finalImg = URL.createObjectURL(blob);
+                                }
+                            } catch(err) { console.error("Live Img Error", err); }
+                        }
+
                         viewerMsgs.push({
                             ts: ts,
                             sender: c.sender || '?',
                             text: c.text || '',
-                            img: imgData || c.image || null, // Nimm Live-URL oder Base64
-                            enc: encPayload // Wichtig für Smart-Delete!
+                            img: finalImg,
+                            enc: encPayload 
                         });
 
-                        // Neu sortieren
                         viewerMsgs.sort((a,b) => a.ts - b.ts);
                         
-                        // Wenn wir gerade die neueste ansehen, spring mit
                         if(viewerIdx >= viewerMsgs.length - 2) {
                             viewerIdx = viewerMsgs.length - 1;
                         }
-                        updateViewerUI(); // UI Refresh (statt updateViewer)
+                        updateViewerUI();
 
                     } catch(e) { console.error(e); }
                 }
             }
         };
     }
-
     // Hilfsfunktion: UI Update ohne Index-Reset
     function updateViewerUI() {
         if(viewerMsgs.length === 0) {
