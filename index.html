@@ -428,7 +428,7 @@
     let viewerIdx = 0;
     let viewerHiddenSet = new Set();
 
-    async function loadViewerData() {
+   async function loadViewerData() {
         const m = document.getElementById('viewerMeta');
         if(!conf.gu || !conf.gr || !conf.gt) {
             m.innerText = "GitHub Daten fehlen."; return;
@@ -447,7 +447,7 @@
             
             const fileData = await resp.json();
             
-            let rawB64 = fileData.content;
+            let rawB64 = fileData.content; 
             if (!rawB64 && fileData.sha) {
                 const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
                 const blobResp = await fetch(blobUrl, { headers: header });
@@ -498,11 +498,11 @@
                 }
             }
             
-            // --- RACE CONDITION FIX ---
+            // --- CLEANUP (WICHTIG) ---
             // Wir filtern jetzt nochmal alles raus, was vielleicht durch den Live-Stream
             // reingekommen ist, während wir das Archiv geladen haben.
             viewerMsgs = viewerMsgs.filter(m => !viewerHiddenSet.has(m.ts));
-            // ---------------------------
+            // -------------------------
             
             viewerMsgs.sort((a,b) => a.ts - b.ts);
             
@@ -522,7 +522,7 @@
         }
     }
 
-    // --- LIVE VIEWER ---
+// --- LIVE VIEWER ---
     let eventSource = null;
     function startLiveViewer() {
         if(eventSource) return;
@@ -534,25 +534,33 @@
         eventSource.onmessage = async (e) => {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
+                
+                // 1. DELETE BEFEHL PRÜFEN
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
                         viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
-                        viewerHiddenSet.add(cmd.ts);
+                        viewerHiddenSet.add(cmd.ts); // Auf Blacklist setzen
                         updateViewerUI();
                         return;
                     }
                 } catch(err){}
 
                 const ts = data.time;
-                if(viewerHiddenSet.has(ts)) return; // Zombie Check
+
+                // 2. CHECK A: Ist die Nachricht auf der Blacklist? (Sofort-Check)
+                if(viewerHiddenSet.has(ts)) return; 
+                
+                // 3. CHECK B: Haben wir die Nachricht schon angezeigt?
                 if(viewerMsgs.some(m => m.ts === ts)) return;
 
                 let encPayload = data.attachment ? data.title : data.message;
                 let imgData = data.attachment ? data.attachment.url : null;
                 if(!encPayload) return;
 
+                // --- HIER VERGEHT ZEIT (Async Decrypt) ---
                 const jsonStr = await decryptText(encPayload, conf.p);
+                
                 if(jsonStr) {
                     try {
                         const c = JSON.parse(jsonStr);
@@ -568,6 +576,16 @@
                                 }
                             } catch(err) { console.error("Live Img Error", err); }
                         }
+
+                        // 4. CHECK C (WICHTIG!): Nochmal prüfen!
+                        // Während wir entschlüsselt haben, könnte loadViewerData die Blacklist gefüllt haben!
+                        if(viewerHiddenSet.has(ts)) {
+                            console.log("Nachricht nach Decrypt verworfen (Hidden):", ts);
+                            return;
+                        }
+                        
+                        // Auch nochmal auf Duplikate prüfen (Race Condition)
+                        if(viewerMsgs.some(m => m.ts === ts)) return;
 
                         viewerMsgs.push({
                             ts: ts,
