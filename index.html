@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Familien Chat</title>
 <style>
     /* === VARIABLES & THEME === */
@@ -170,12 +174,20 @@
         </div>
     </div>
 
+
+
+    
     <!-- SETTINGS -->
     <div id="settingsModal">
         <header class="app-header">
             <div class="header-title">Einstellungen</div>
             <button class="btn-icon" onclick="saveConf()">Fertig</button>
         </header>
+        <!-- PUSH TOGGLE -->
+            <div class="setting-row" id="pushRow">
+                <span style="font-size:17px; font-weight:500">🔔 Benachrichtigungen</span>
+                <button onclick="enablePush()" style="background:var(--accent); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold; cursor:pointer">Aktivieren</button>
+            </div>
         <div class="scroll-area">
             <div class="label-small">Kanal Name (ntfy)</div>
             <input id="confTopic" placeholder="oma_geheim">
@@ -722,6 +734,80 @@
             updateViewerUI(); // FIX: Hier stand vorher updateViewer()
         }
     }
+
+
+// ==========================================
+    // === PWA & PUSH NOTIFICATIONS (Zusatz) ===
+    // ==========================================
+
+    // 1. Service Worker registrieren (sobald die Seite lädt)
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log("Service Worker bereit", reg))
+        .catch(err => console.error("Service Worker Fehler", err));
+    }
+
+    // 2. Hilfsfunktion: VAPID Key Formatierung
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+
+    // 3. Push aktivieren (Wird vom Button im Settings-Modal aufgerufen)
+    async function enablePush() {
+        if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
+        
+        const btn = document.querySelector('#pushRow button'); // Falls du dem Button eine ID gibst, sonst selector anpassen
+        const originalText = btn ? btn.innerText : "";
+        if(btn) btn.innerText = "⏳";
+
+        try {
+            // A. Browser fragen ob erlaubt
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') throw new Error("Benachrichtigungen wurden verweigert.");
+
+            // B. Service Worker holen
+            const reg = await navigator.serviceWorker.ready;
+
+            // C. VAPID Public Key von ntfy.sh holen (Dynamisch & Zukunftssicher)
+            // ntfy.sh stellt diesen Key unter /v1/sys/info bereit
+            const infoResp = await fetch('https://ntfy.sh/v1/sys/info');
+            const info = await infoResp.json();
+            const vapidKey = info.vapid_key;
+
+            if(!vapidKey) throw new Error("Konnte VAPID Key von ntfy.sh nicht laden.");
+
+            // D. Beim Browser Push-Manager abonnieren
+            const sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(vapidKey)
+            });
+
+            // E. Das Abo an ntfy.sh senden (damit ntfy weiß, wohin es pushen soll)
+            await fetch(`https://ntfy.sh/${conf.t}/push`, {
+                method: 'POST',
+                body: JSON.stringify(sub)
+            });
+
+            alert("Push-Benachrichtigungen aktiviert! 🔔\n\nHinweis: Auf iOS/Android funktioniert das am besten, wenn die App 'Zum Home-Bildschirm' hinzugefügt wurde.");
+            if(btn) {
+                btn.innerText = "Aktiv ✅";
+                btn.disabled = true;
+            }
+
+        } catch (e) {
+            console.error(e);
+            alert("Fehler bei Push-Aktivierung: " + e.message);
+            if(btn) btn.innerText = "Fehler ❌";
+        }
+    }
+    
 </script>
 </body>
 </html>
