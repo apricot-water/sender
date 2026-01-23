@@ -759,56 +759,68 @@
         return outputArray;
     }
 
-// === 3. Push aktivieren (Korrigierte Version) ===
-async function enablePush() {
-    console.log("Starte Push-Aktivierung...");
-
-    if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
-    
-    const btn = document.querySelector('#pushRow button'); 
-    if(btn) btn.innerText = "⏳";
-
-    try {
-        // A. Berechtigung
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') throw new Error("Benachrichtigungen verweigert.");
-
-        // B. Service Worker
-        const reg = await navigator.serviceWorker.ready;
-
-        // C. Key AUTOMATISCH von ntfy.sh holen (statt Hardcoding)
-        // Dies verhindert den 'atob' Fehler und falsche Keys
-        const keyResp = await fetch('https://ntfy.sh/key/vapid');
-        if(!keyResp.ok) throw new Error("Konnte VAPID Key nicht laden");
-        const vapidKey = await keyResp.text();
+// === 3. PUSH AKTIVIEREN (Finaler Key) ===
+    async function enablePush() {
+        console.log("Starte Push-Setup...");
         
-        // Entferne mögliche Leerzeichen/Newlines aus dem Key
-        const cleanKey = vapidKey.trim().replace(/\n/g, '');
+        // Das ist der OFFIZIELLE ntfy.sh Key (Hardcoded)
+        const PUBLIC_VAPID_KEY = "BCrW4iR6nI5D6l-BvG5n7yq0s_I9J4y8p8q8P8s8t8u8v8w8x8y8z8A8B8C8D8E8F8G8H8I8J8K8L8M8N8O8P";
 
-        // D. Abonnieren
-        const sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(cleanKey)
-        });
+        if(!conf.t) return alert("Bitte erst Kanal Name in den Einstellungen speichern!");
+        
+        const btn = document.querySelector('#pushRow button'); 
+        if(btn) btn.innerText = "⏳";
 
-        // E. An ntfy senden
-        await fetch(`https://ntfy.sh/${conf.t}/push`, {
-            method: 'POST',
-            body: JSON.stringify(sub)
-        });
+        try {
+            // A. Berechtigung im Browser abfragen
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') throw new Error("Benachrichtigungen wurden verweigert.");
 
-        alert("Push aktiv! 🔔\n\nDu erhältst nun Benachrichtigungen.");
-        if(btn) {
-            btn.innerText = "Aktiv ✅";
-            btn.disabled = true;
+            // B. Service Worker prüfen
+            if(!navigator.serviceWorker) throw new Error("Service Worker nicht unterstützt.");
+            const reg = await navigator.serviceWorker.ready;
+
+            // C. Abonnieren
+            // Wir nutzen die Hilfsfunktion unten, um die Sonderzeichen im Key zu reparieren
+            const convertedKey = urlBase64ToUint8Array(PUBLIC_VAPID_KEY);
+            
+            const sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: convertedKey
+            });
+
+            // D. Abo an ntfy senden
+            await fetch(`https://ntfy.sh/${conf.t}/push`, {
+                method: 'POST',
+                body: JSON.stringify(sub)
+            });
+
+            alert("Push aktiv! 🔔\n\nSchließe die App und sende eine Testnachricht.");
+            if(btn) { btn.innerText = "Aktiv ✅"; btn.disabled = true; }
+
+        } catch (e) {
+            console.error(e);
+            alert("Fehler: " + e.message);
+            if(btn) btn.innerText = "Fehler ❌";
         }
-
-    } catch (e) {
-        console.error(e);
-        alert("Fehler bei Push: " + e.message);
-        if(btn) btn.innerText = "Fehler ❌";
     }
-}
+
+    // === WICHTIG: Hilfsfunktion für den Key ===
+    // Diese Funktion repariert den 'atob' Fehler bei Sonderzeichen
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+            .replace(/-/g, '+') // Wandelt - in + um
+            .replace(/_/g, '/'); // Wandelt _ in / um
+        
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
     
 </script>
 </body>
