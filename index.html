@@ -243,7 +243,7 @@
         document.getElementById('settingsModal').classList.toggle('open', open);
     }
 
-    function switchTab(tab) {
+   function switchTab(tab) {
         activeTab = tab;
         document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
         document.getElementById('tab-' + tab).classList.add('active');
@@ -253,8 +253,18 @@
         toggleSidebar(false);
         
         if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
+        
         if(tab === 'view') {
             document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
+            
+            // FIX: Live-Verbindung resetten!
+            // Damit zwingen wir ntfy, uns alle Nachrichten aus dem Cache (since=all)
+            // noch einmal zu senden, damit wir auch die sehen, die wir gerade gesendet haben.
+            if(eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+
             loadViewerData(); 
             startLiveViewer(); 
         }
