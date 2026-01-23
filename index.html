@@ -497,7 +497,8 @@
 
     // --- DELETE LOGIC ---
 
-    async function deleteMessage(ts) {
+
+async function deleteMessage(ts) {
         if(!confirm("Nachricht wirklich löschen?")) return;
         
         const btn = event.currentTarget;
@@ -505,46 +506,58 @@
         btn.innerHTML = "⏳"; 
         
         try {
-            // 1. GitHub JSON laden
+            // 1. Metadaten holen (wir brauchen den SHA)
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
-            const resp = await fetch(url, { 
-                headers: { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' }
-            });
+            const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
             
-            if(!resp.ok) throw new Error("GitHub Load Error");
+            const resp = await fetch(url, { headers: header });
+            if(!resp.ok) throw new Error("GitHub Load Error: " + resp.status);
             
             const fileData = await resp.json();
-            const cleanB64 = fileData.content.replace(/\s/g, ''); 
+            
+            // === FIX FÜR DATEIEN > 1MB ===
+            let rawB64 = fileData.content;
+
+            // Wenn content fehlt (weil Datei zu groß), holen wir ihn über die Blob-API
+            if (!rawB64 && fileData.sha) {
+                console.log("Datei > 1MB, lade Blob...");
+                const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
+                const blobResp = await fetch(blobUrl, { headers: header });
+                if(blobResp.ok) {
+                    const blobData = await blobResp.json();
+                    rawB64 = blobData.content;
+                }
+            }
+
+            if (!rawB64) throw new Error("Konnte Dateiinhalt nicht laden.");
+            // =============================
+            
+            const cleanB64 = rawB64.replace(/\s/g, ''); 
             const content = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
-            // 2. Nachricht suchen ODER neu anlegen (Zombie-Schutz!)
+            // 2. Nachricht suchen & Soft Delete
             let foundIndex = content.findIndex(m => m.timestamp === ts);
             
             if(foundIndex !== -1) {
-                // Fall A: Nachricht war schon im Archiv -> Verstecken
-                content[foundIndex].hidden = true;
+                content[foundIndex].hidden = true; // Existierende markieren
             } else {
-                // Fall B: Nachricht ist neu (nur Live). 
-                // Wir müssen sie als "hidden" ins Archiv schreiben, damit der Worker sie ignoriert!
-                // Wir suchen die Nachricht in unserem lokalen Viewer-Cache
+                // Nur im Live-Cache? Dann hinzufügen und verstecken
                 const localMsg = viewerMsgs.find(m => m.ts === ts);
-                
                 if(localMsg) {
                     content.push({
                         timestamp: ts,
-                        enc: localMsg.enc, // Wir brauchen den encrypted string für die Struktur
-                        img: null, // Bild brauchen wir nicht speichern, ist eh gelöscht
-                        hidden: true // <--- DAS WICHTIGSTE
+                        enc: localMsg.enc,
+                        img: null, // Bild sparen wir uns im Archiv, ist eh hidden
+                        hidden: true 
                     });
-                    // Sortieren, damit die Ordnung stimmt
                     content.sort((a,b) => a.timestamp - b.timestamp);
-                } else {
-                    console.warn("Nachricht lokal nicht gefunden, lösche blind.");
                 }
             }
 
             // 3. Zurück zu GitHub pushen
+            // (Die API erlaubt Updates bis ca 50-100MB via PUT, das sollte reichen)
             const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content))));
+            
             const updateBody = {
                 message: "Delete/Hide Message via App",
                 content: newContent,
@@ -559,23 +572,27 @@
 
             if(!putResp.ok) throw new Error("GitHub Save Error");
 
-            // 4. Live-Befehl an ntfy senden
+            // 4. Live Befehl
             await fetch(`https://ntfy.sh/${conf.t}`, { 
                 method: 'POST', 
                 body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
             });
 
-            // 5. Lokal sofort entfernen (für schnelles Feedback)
+            // 5. UI Update
             viewerMsgs = viewerMsgs.filter(m => m.ts !== ts);
             updateViewerUI();
 
             alert("Gelöscht! 🗑️");
 
         } catch(e) {
+            console.error(e);
             alert("Fehler: " + e.message);
         }
         if(btn) btn.innerHTML = originalIcon;
     }
+
+
+    
     // --- UPDATE VIEWER (UI Update) ---
     // Ersetze deine alte updateViewer() Funktion hiermit:
     function updateViewer() {
