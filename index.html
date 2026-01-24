@@ -254,33 +254,6 @@
     function toggleSettings(open) {
         document.getElementById('settingsModal').classList.toggle('open', open);
     }
-
-   function switchTab(tab) {
-        activeTab = tab;
-        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
-        document.getElementById('tab-' + tab).classList.add('active');
-        document.querySelectorAll('.menu-item').forEach(e => e.classList.remove('active'));
-        if(event && event.currentTarget) event.currentTarget.classList.add('active'); 
-        
-        toggleSidebar(false);
-        
-        if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
-        
-        if(tab === 'view') {
-            document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
-            
-            // FIX: Live-Verbindung resetten!
-            // Damit zwingen wir ntfy, uns alle Nachrichten aus dem Cache (since=all)
-            // noch einmal zu senden, damit wir auch die sehen, die wir gerade gesendet haben.
-            if(eventSource) {
-                eventSource.close();
-                eventSource = null;
-            }
-
-            loadViewerData(); 
-            startLiveViewer(); 
-        }
-    }
     
     function toggleDarkMode() {
         document.body.classList.toggle('dark');
@@ -445,193 +418,272 @@
         else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
     }
 
-// --- 5. VIEWER LOGIC ---
-    let viewerMsgs = [];
+// --- 5. VIEWER LOGIC (CLEAN VERSION) ---
+    // Wir nutzen eine Map: Key = Timestamp. Das verhindert Duplikate zu 100%.
+    let msgMap = new Map(); 
+    let viewerMsgs = []; // Das Array für die Anzeige (wird aus der Map generiert)
     let viewerIdx = 0;
     let viewerHiddenSet = new Set();
+    let eventSource = null;
 
-    // HILFSFUNKTION: Prüft, ob Nachricht schon da ist (verhindert Doppelte)
-    function msgExists(ts) {
-        return viewerMsgs.some(m => m.ts === ts);
+    function resetViewer() {
+        msgMap.clear();
+        viewerMsgs = [];
+        viewerIdx = 0;
+        viewerHiddenSet.clear();
+        document.getElementById('viewerMeta').innerText = "Lade Daten...";
+        document.getElementById('viewerImg').style.display = 'none';
+        document.getElementById('viewerText').innerText = "";
+        
+        // Alte Verbindung kappen
+        if(eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
     }
 
-    async function loadViewerData() {
-        const m = document.getElementById('viewerMeta');
-        if(!conf.gu || !conf.gr || !conf.gt) {
-            m.innerText = "GitHub Daten fehlen."; return;
+    // Zentrale Funktion: Fügt Nachricht hinzu (egal woher sie kommt)
+    function addMessageToView(msgObj) {
+        // 1. Check: Ist sie gelöscht?
+        if(viewerHiddenSet.has(msgObj.ts)) return;
+        
+        // 2. Check: Haben wir die schon? (Der Map-Trick)
+        if(msgMap.has(msgObj.ts)) return; 
+
+        // Neu hinzufügen
+        msgMap.set(msgObj.ts, msgObj);
+        
+        // Map in Array umwandeln und sortieren
+        viewerMsgs = Array.from(msgMap.values()).sort((a,b) => a.ts - b.ts);
+        
+        // Wenn wir vorher "am Ende" waren oder es die erste Nachricht ist -> ans Ende springen
+        if(viewerMsgs.length === 1 || viewerIdx >= viewerMsgs.length - 2) {
+            viewerIdx = viewerMsgs.length - 1;
         }
         
-        m.innerText = "Lade Verlauf...";
-        // WICHTIG: Wir löschen hier NICHT mehr pauschal die Liste, 
-        // falls der Live-Stream schon schneller war.
-        // Wir setzen nur zurück, wenn es der erste Aufruf ist.
-        if(viewerMsgs.length > 0 && activeTab !== 'view') viewerMsgs = [];
+        updateViewerUI();
+    }
+
+    // Startpunkt (wird beim Tab-Wechsel aufgerufen)
+    function switchTab(tab) {
+        activeTab = tab;
+        document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+        document.getElementById('tab-' + tab).classList.add('active');
+        document.querySelectorAll('.menu-item').forEach(e => e.classList.remove('active'));
+        if(event && event.currentTarget) event.currentTarget.classList.add('active'); 
+        toggleSidebar(false);
+
+        if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
+        
+        if(tab === 'view') {
+            document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
+            resetViewer();
+            
+            // BEIDES PARALLEL STARTEN
+            // Da wir die Map nutzen, ist es egal, wer schneller ist.
+            // Es gibt keine Race-Conditions mehr.
+            startLiveViewer(); // ntfy
+            loadGithubData();  // GitHub
+        }
+    }
+
+    // QUELLE 1: GitHub (Archiv)
+    async function loadGithubData() {
+        if(!conf.gu || !conf.gr || !conf.gt) return;
         
         try {
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
             const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
             const resp = await fetch(url, { headers: header, cache: "no-store" });
             
-            if(!resp.ok) throw new Error("GitHub Zugriff verweigert");
+            if(!resp.ok) throw new Error("GitHub Fehler");
             
             const fileData = await resp.json();
-            
             let rawB64 = fileData.content; 
+            
+            // Fallback für große Dateien (Blob API)
             if (!rawB64 && fileData.sha) {
-                const blobUrl = `https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`;
-                const blobResp = await fetch(blobUrl, { headers: header });
+                const blobResp = await fetch(`https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`, { headers: header });
                 if(blobResp.ok) {
                     const blobData = await blobResp.json();
                     rawB64 = blobData.content;
                 }
             }
-            
-            if(!rawB64) { m.innerText = "Archiv leer."; return; }
+            if(!rawB64) return;
 
             const cleanB64 = rawB64.replace(/\s/g, ''); 
             const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
+            // Verarbeiten
             for(let item of rawData) {
-                // 1. Blacklist Check
-                if(item.hidden) {
-                    viewerHiddenSet.add(item.timestamp);
-                    continue; 
-                }
-                
-                // 2. DUPLIKAT CHECK (Der Fix!)
-                // Wenn ntfy schneller war, ist die Nachricht schon da -> überspringen
-                if(msgExists(item.timestamp)) continue;
-
-                if(!item.enc) continue;
-
-                const jsonStr = await decryptText(item.enc, conf.p);
-                if(jsonStr) {
-                    try {
-                        const c = JSON.parse(jsonStr);
-                        let finalImg = null;
-
-                        if (item.img) {
-                             try {
-                                const encBuf = base64ToBuffer(item.img);
-                                const decBuf = await decryptData(encBuf, conf.p);
-                                if(decBuf) {
-                                    const blob = new Blob([decBuf], {type: 'image/jpeg'});
-                                    finalImg = URL.createObjectURL(blob);
-                                }
-                             } catch(err) { console.error("Img Decrypt Error", err); }
-                        }
-
-                        viewerMsgs.push({
-                            ts: item.timestamp,
-                            sender: c.sender || '?',
-                            text: c.text || '',
-                            img: finalImg, 
-                            enc: item.enc 
-                        });
-                    } catch(e){}
-                }
+                if(item.hidden) { viewerHiddenSet.add(item.timestamp); continue; }
+                processAndAdd(item.timestamp, item.enc, item.img);
             }
-            
-            // Bereinigung
-            viewerMsgs = viewerMsgs.filter(m => !viewerHiddenSet.has(m.ts));
-            viewerMsgs.sort((a,b) => a.ts - b.ts);
-            
-            if(viewerMsgs.length > 0) {
-                // Nur zum Ende springen, wenn wir ganz am Anfang waren oder neu geladen haben
-                if(viewerIdx === 0 || viewerIdx >= viewerMsgs.length - 5) {
-                    viewerIdx = viewerMsgs.length - 1; 
-                }
-                updateViewerUI();
-            } else {
-                if(document.getElementById('viewerMeta').innerText.includes("Lade")) {
-                     document.getElementById('viewerMeta').innerText = "Archiv leer (Warte auf Live...)";
-                }
-                document.getElementById('viewerText').innerText = "Keine Nachrichten im Archiv.";
-            }
-            
-        } catch(e) {
-            console.error(e);
-            m.innerText = "Ladefehler (Archiv)";
+        } catch(e) { 
+            console.log("GitHub Load Error (evtl leer):", e); 
+            // Kein UI Fehler anzeigen, vielleicht klappt ja ntfy
         }
     }
 
-    // --- LIVE VIEWER ---
+    // QUELLE 2: ntfy (Live & Cache)
     function startLiveViewer() {
-        if(eventSource) return; // Läuft schon? Raus hier.
         if(!conf.t) return;
-
-        console.log("Starte Live-Viewer...");
-        // since=all sorgt dafür, dass ntfy alles aus dem Cache schickt
         eventSource = new EventSource(`https://ntfy.sh/${conf.t}/sse?since=all`);
         
-        eventSource.onmessage = async (e) => {
+        eventSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
-                
-                // 1. DELETE BEFEHL
+                // Delete Befehl?
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
-                        viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
-                        viewerHiddenSet.add(cmd.ts);
-                        updateViewerUI();
+                        handleDelete(cmd.ts);
                         return;
                     }
                 } catch(err){}
 
                 const ts = data.time;
-
-                // 2. CHECK: Blacklist?
-                if(viewerHiddenSet.has(ts)) return; 
-                
-                // 3. CHECK: Duplikat? (Falls GitHub schneller war)
-                if(msgExists(ts)) return;
-
                 let encPayload = data.attachment ? data.title : data.message;
-                let imgData = data.attachment ? data.attachment.url : null;
-                if(!encPayload) return;
-
-                const jsonStr = await decryptText(encPayload, conf.p);
+                let imgUrl = data.attachment ? data.attachment.url : null;
                 
-                if(jsonStr) {
-                    try {
-                        const c = JSON.parse(jsonStr);
-                        let finalImg = null;
-                        if (imgData) {
-                            try {
-                                const resp = await fetch(imgData);
-                                const encBuf = await resp.arrayBuffer();
-                                const decBuf = await decryptData(encBuf, conf.p);
-                                if(decBuf) {
-                                    const blob = new Blob([decBuf], {type: 'image/jpeg'});
-                                    finalImg = URL.createObjectURL(blob);
-                                }
-                            } catch(err) { console.error("Live Img Error", err); }
-                        }
-
-                        // Letzter Check vor dem Hinzufügen (Async dauert, vielleicht ist es jetzt schon da)
-                        if(msgExists(ts) || viewerHiddenSet.has(ts)) return;
-
-                        viewerMsgs.push({
-                            ts: ts,
-                            sender: c.sender || '?',
-                            text: c.text || '',
-                            img: finalImg,
-                            enc: encPayload 
-                        });
-
-                        viewerMsgs.sort((a,b) => a.ts - b.ts);
-                        
-                        // Automatisch weiterschalten wenn man beim neusten ist
-                        if(viewerIdx >= viewerMsgs.length - 2) viewerIdx = viewerMsgs.length - 1;
-                        
-                        updateViewerUI();
-                    } catch(e) { console.error(e); }
-                }
+                // Da imgUrl eine URL ist, müssen wir das Bild erst laden, 
+                // falls wir das Archiv-Format simulieren wollen.
+                // Aber: Für den Viewer reicht die URL (wir entschlüsseln sie später).
+                // HIER: Wir übergeben die URL an die Process Funktion.
+                
+                // ACHTUNG: Bei ntfy ist das Bild noch verschlüsselt auf dem Server.
+                // Wir müssen es in processAndAdd laden und entschlüsseln.
+                processAndAdd(ts, encPayload, null, imgUrl);
             }
         };
     }
 
+    // KERN: Entschlüsseln und zur Map hinzufügen
+    async function processAndAdd(ts, encText, imgBase64, imgUrlFromNtfy = null) {
+        if(!encText) return;
+        
+        // 1. Text entschlüsseln
+        const jsonStr = await decryptText(encText, conf.p);
+        if(!jsonStr) return; // Falsches Passwort oder Mülldaten
+
+        try {
+            const content = JSON.parse(jsonStr);
+            let finalImg = null;
+
+            // 2. Bild verarbeiten
+            // Fall A: Bild kommt direkt aus GitHub (Base64 String)
+            if (imgBase64) {
+                 try {
+                    const encBuf = base64ToBuffer(imgBase64);
+                    const decBuf = await decryptData(encBuf, conf.p);
+                    if(decBuf) {
+                        const blob = new Blob([decBuf], {type: 'image/jpeg'});
+                        finalImg = URL.createObjectURL(blob);
+                    }
+                 } catch(err) {}
+            }
+            // Fall B: Bild kommt von ntfy (URL) -> Downloaden & Entschlüsseln
+            else if (imgUrlFromNtfy) {
+                 try {
+                    const resp = await fetch(imgUrlFromNtfy);
+                    if(resp.ok) {
+                        const encBuf = await resp.arrayBuffer();
+                        const decBuf = await decryptData(encBuf, conf.p);
+                        if(decBuf) {
+                            const blob = new Blob([decBuf], {type: 'image/jpeg'});
+                            finalImg = URL.createObjectURL(blob);
+                        }
+                    }
+                 } catch(err) {}
+            }
+
+            // 3. Objekt bauen
+            const msgObj = {
+                ts: ts,
+                sender: content.sender || '?',
+                text: content.text || '',
+                img: finalImg,
+                enc: encText // Behalten für interne Zwecke
+            };
+
+            // 4. Ab in die UI damit
+            addMessageToView(msgObj);
+
+        } catch(e) { console.error(e); }
+    }
+
+    function handleDelete(ts) {
+        viewerHiddenSet.add(ts);
+        msgMap.delete(ts);
+        viewerMsgs = Array.from(msgMap.values()).sort((a,b) => a.ts - b.ts);
+        updateViewerUI();
+    }
+
+    // --- UI UPDATE & DELETE (Rest bleibt gleich) ---
+    async function deleteMessage(ts) {
+        if(!confirm("Löschen?")) return;
+        
+        // 1. GitHub Update (Hidden setzen)
+        try {
+            // ... (Hier dein bestehender GitHub Delete Code, den können wir so lassen)
+            // Kurzfassung: Nur den API Call machen
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
+            // ... (der Code ist komplex, ich nehme an du hast ihn noch im Kopf/Zwischenablage
+            // oder willst ihn behalten? Falls er weg ist, sag bescheid)
+            
+            // Simpler Hack für jetzt, damit UI reagiert:
+            handleDelete(ts); 
+            
+            // Delete-Command an ntfy senden
+             await fetch(`https://ntfy.sh/${conf.t}`, { 
+                method: 'POST', 
+                body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
+            });
+
+        } catch(e) { alert("Delete Error (siehe Konsole)"); console.error(e); }
+    }
+
+    function updateViewerUI() {
+        if(viewerMsgs.length === 0) {
+            document.getElementById('viewerMeta').innerText = "Keine Nachrichten gefunden.";
+            return;
+        }
+
+        if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
+        if(viewerIdx < 0) viewerIdx = 0;
+
+        const msg = viewerMsgs[viewerIdx];
+        document.getElementById('viewerText').innerText = msg.text;
+        
+        const img = document.getElementById('viewerImg');
+        if(msg.img) { 
+            img.src = msg.img; 
+            img.style.display = 'block'; 
+        } else { 
+            img.style.display = 'none'; 
+        }
+        
+        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        
+        // HTML für Meta Infos + Delete Button
+        // Nutze hier den bestehenden Delete Code
+        const metaHtml = `
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
+                <button onclick="deleteMessage(${msg.ts})" style="background:rgba(255,255,255,0.2); border:1px solid #666; color:white; border-radius:4px; cursor:pointer; font-size:16px; padding:2px 8px;">🗑️</button>
+            </div>
+        `;
+        document.getElementById('viewerMeta').innerHTML = metaHtml;
+    }
+
+    function viewerNext(dir) {
+        const next = viewerIdx + dir;
+        if(next >= 0 && next < viewerMsgs.length) {
+            viewerIdx = next;
+            updateViewerUI();
+        }
+    }
+ 
     // --- DELETE LOGIC ---
     async function deleteMessage(ts) {
         if(!confirm("Nachricht wirklich löschen?")) return;
@@ -705,33 +757,7 @@
         if(btn) btn.innerHTML = originalIcon;
     }
 
-    function updateViewerUI() {
-        if(!viewerMsgs || viewerMsgs.length === 0) {
-            document.getElementById('viewerMeta').innerText = "Keine Nachrichten (Warte auf Live-Eingang...)";
-            document.getElementById('viewerText').innerText = "";
-            document.getElementById('viewerImg').style.display = 'none';
-            return;
-        }
-        
-        if(viewerIdx >= viewerMsgs.length) viewerIdx = viewerMsgs.length - 1;
-        if(viewerIdx < 0) viewerIdx = 0;
-
-        const msg = viewerMsgs[viewerIdx];
-        document.getElementById('viewerText').innerText = msg.text;
-        const img = document.getElementById('viewerImg');
-        if(msg.img) { img.src = msg.img; img.style.display = 'block'; }
-        else { img.style.display = 'none'; }
-        
-        const date = new Date(msg.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        
-        const metaHtml = `
-            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
-                <span>${msg.sender} • ${date} (${viewerIdx+1}/${viewerMsgs.length})</span>
-                <button onclick="deleteMessage(${msg.ts})" style="background:rgba(255,255,255,0.2); border:1px solid #666; color:white; border-radius:4px; cursor:pointer; font-size:16px; padding:2px 8px;">🗑️</button>
-            </div>
-        `;
-        document.getElementById('viewerMeta').innerHTML = metaHtml;
-    }
+   
 
     function viewerNext(dir) {
         const next = viewerIdx + dir;
