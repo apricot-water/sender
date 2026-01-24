@@ -445,20 +445,27 @@
         else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
     }
 
-    // --- 5. VIEWER LOGIC ---
+// --- 5. VIEWER LOGIC ---
     let viewerMsgs = [];
     let viewerIdx = 0;
     let viewerHiddenSet = new Set();
 
-   async function loadViewerData() {
+    // HILFSFUNKTION: Prüft, ob Nachricht schon da ist (verhindert Doppelte)
+    function msgExists(ts) {
+        return viewerMsgs.some(m => m.ts === ts);
+    }
+
+    async function loadViewerData() {
         const m = document.getElementById('viewerMeta');
         if(!conf.gu || !conf.gr || !conf.gt) {
             m.innerText = "GitHub Daten fehlen."; return;
         }
         
         m.innerText = "Lade Verlauf...";
-        viewerMsgs = [];
-        viewerHiddenSet.clear(); 
+        // WICHTIG: Wir löschen hier NICHT mehr pauschal die Liste, 
+        // falls der Live-Stream schon schneller war.
+        // Wir setzen nur zurück, wenn es der erste Aufruf ist.
+        if(viewerMsgs.length > 0 && activeTab !== 'view') viewerMsgs = [];
         
         try {
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
@@ -485,11 +492,16 @@
             const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
             
             for(let item of rawData) {
-                // Blacklist füllen
+                // 1. Blacklist Check
                 if(item.hidden) {
                     viewerHiddenSet.add(item.timestamp);
                     continue; 
                 }
+                
+                // 2. DUPLIKAT CHECK (Der Fix!)
+                // Wenn ntfy schneller war, ist die Nachricht schon da -> überspringen
+                if(msgExists(item.timestamp)) continue;
+
                 if(!item.enc) continue;
 
                 const jsonStr = await decryptText(item.enc, conf.p);
@@ -520,16 +532,15 @@
                 }
             }
             
-            // --- CLEANUP (WICHTIG) ---
-            // Wir filtern jetzt nochmal alles raus, was vielleicht durch den Live-Stream
-            // reingekommen ist, während wir das Archiv geladen haben.
+            // Bereinigung
             viewerMsgs = viewerMsgs.filter(m => !viewerHiddenSet.has(m.ts));
-            // -------------------------
-            
             viewerMsgs.sort((a,b) => a.ts - b.ts);
             
             if(viewerMsgs.length > 0) {
-                viewerIdx = viewerMsgs.length - 1; 
+                // Nur zum Ende springen, wenn wir ganz am Anfang waren oder neu geladen haben
+                if(viewerIdx === 0 || viewerIdx >= viewerMsgs.length - 5) {
+                    viewerIdx = viewerMsgs.length - 1; 
+                }
                 updateViewerUI();
             } else {
                 if(document.getElementById('viewerMeta').innerText.includes("Lade")) {
@@ -539,30 +550,30 @@
             }
             
         } catch(e) {
-            m.innerText = "Ladefehler";
-            document.getElementById('viewerText').innerText = e.message;
+            console.error(e);
+            m.innerText = "Ladefehler (Archiv)";
         }
     }
 
-// --- LIVE VIEWER ---
-    let eventSource = null;
+    // --- LIVE VIEWER ---
     function startLiveViewer() {
-        if(eventSource) return;
+        if(eventSource) return; // Läuft schon? Raus hier.
         if(!conf.t) return;
 
         console.log("Starte Live-Viewer...");
+        // since=all sorgt dafür, dass ntfy alles aus dem Cache schickt
         eventSource = new EventSource(`https://ntfy.sh/${conf.t}/sse?since=all`);
         
         eventSource.onmessage = async (e) => {
             const data = JSON.parse(e.data);
             if(data.event === 'message') {
                 
-                // 1. DELETE BEFEHL PRÜFEN
+                // 1. DELETE BEFEHL
                 try {
                     const cmd = JSON.parse(data.message);
                     if(cmd.cmd === 'DELETE') {
                         viewerMsgs = viewerMsgs.filter(m => m.ts !== cmd.ts);
-                        viewerHiddenSet.add(cmd.ts); // Auf Blacklist setzen
+                        viewerHiddenSet.add(cmd.ts);
                         updateViewerUI();
                         return;
                     }
@@ -570,17 +581,16 @@
 
                 const ts = data.time;
 
-                // 2. CHECK A: Ist die Nachricht auf der Blacklist? (Sofort-Check)
+                // 2. CHECK: Blacklist?
                 if(viewerHiddenSet.has(ts)) return; 
                 
-                // 3. CHECK B: Haben wir die Nachricht schon angezeigt?
-                if(viewerMsgs.some(m => m.ts === ts)) return;
+                // 3. CHECK: Duplikat? (Falls GitHub schneller war)
+                if(msgExists(ts)) return;
 
                 let encPayload = data.attachment ? data.title : data.message;
                 let imgData = data.attachment ? data.attachment.url : null;
                 if(!encPayload) return;
 
-                // --- HIER VERGEHT ZEIT (Async Decrypt) ---
                 const jsonStr = await decryptText(encPayload, conf.p);
                 
                 if(jsonStr) {
@@ -599,15 +609,8 @@
                             } catch(err) { console.error("Live Img Error", err); }
                         }
 
-                        // 4. CHECK C (WICHTIG!): Nochmal prüfen!
-                        // Während wir entschlüsselt haben, könnte loadViewerData die Blacklist gefüllt haben!
-                        if(viewerHiddenSet.has(ts)) {
-                            console.log("Nachricht nach Decrypt verworfen (Hidden):", ts);
-                            return;
-                        }
-                        
-                        // Auch nochmal auf Duplikate prüfen (Race Condition)
-                        if(viewerMsgs.some(m => m.ts === ts)) return;
+                        // Letzter Check vor dem Hinzufügen (Async dauert, vielleicht ist es jetzt schon da)
+                        if(msgExists(ts) || viewerHiddenSet.has(ts)) return;
 
                         viewerMsgs.push({
                             ts: ts,
@@ -618,7 +621,10 @@
                         });
 
                         viewerMsgs.sort((a,b) => a.ts - b.ts);
+                        
+                        // Automatisch weiterschalten wenn man beim neusten ist
                         if(viewerIdx >= viewerMsgs.length - 2) viewerIdx = viewerMsgs.length - 1;
+                        
                         updateViewerUI();
                     } catch(e) { console.error(e); }
                 }
