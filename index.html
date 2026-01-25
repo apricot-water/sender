@@ -114,7 +114,7 @@
         </div>
     </div>
     
-<!-- HEADER -->
+   <!-- HEADER -->
     <header class="app-header">
         <!-- Titel jetzt links -->
         <div class="header-title" id="pageTitle">Nachricht schreiben</div>
@@ -135,7 +135,7 @@
     <div class="sidebar">
         <div style="padding: 0 20px 20px 20px; font-weight:bold; font-size:20px; color:var(--text-sub)">Menü</div>
         <div class="menu-item active" onclick="switchTab('send')">✍️ Schreiben</div>
-        <div class="menu-item" onclick="switchTab('view')">👀 Omas Sicht</div>
+        <div class="menu-item" onclick="switchTab('view')">🛠️Nachrichten bearbeiten</div>
         <div style="flex:1"></div>
         <div class="menu-item" style="font-size:14px; color:var(--text-sub)" onclick="toggleDarkMode()">🌙 Dark Mode umschalten</div>
     </div>
@@ -482,7 +482,7 @@
         if(tab === 'send') document.getElementById('pageTitle').innerText = "Nachricht schreiben";
         
         if(tab === 'view') {
-            document.getElementById('pageTitle').innerText = "Omas Sicht (Live)";
+            document.getElementById('pageTitle').innerText = "Omas Sicht";
             resetViewer();
             
             // BEIDES PARALLEL STARTEN
