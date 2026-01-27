@@ -691,29 +691,7 @@ function switchTab(tab) {
         updateViewerUI();
     }
 
-    // --- UI UPDATE & DELETE (Rest bleibt gleich) ---
-    async function deleteMessage(ts) {
-        if(!confirm("Löschen?")) return;
-        
-        // 1. GitHub Update (Hidden setzen)
-        try {
-            // ... (Hier dein bestehender GitHub Delete Code, den können wir so lassen)
-            // Kurzfassung: Nur den API Call machen
-            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json`;
-            // ... (der Code ist komplex, ich nehme an du hast ihn noch im Kopf/Zwischenablage
-            // oder willst ihn behalten? Falls er weg ist, sag bescheid)
-            
-            // Simpler Hack für jetzt, damit UI reagiert:
-            handleDelete(ts); 
-            
-            // Delete-Command an ntfy senden
-             await fetch(`https://ntfy.sh/${conf.t}`, { 
-                method: 'POST', 
-                body: JSON.stringify({ cmd: 'DELETE', ts: ts }) 
-            });
 
-        } catch(e) { alert("Delete Error (siehe Konsole)"); console.error(e); }
-    }
 
     function updateViewerUI() {
         if(viewerMsgs.length === 0) {
@@ -851,17 +829,6 @@ function switchTab(tab) {
         .catch(err => console.error("Service Worker Fehler", err));
     }
 
-   // 2. Hilfsfunktion: VAPID Key Formatierung
-    function urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-        return outputArray;
-    }
 
 // === 3. PUSH AKTIVIEREN (Finaler Key) ===
     async function enablePush() {
