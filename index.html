@@ -114,7 +114,42 @@
         background: var(--accent); height: 100%; width: 0%;
         transition: width 0.2s; border-radius: 4px;
     }
-
+/* === LOG TAB STYLES === */
+    .log-container { padding: 15px; }
+    .log-item { 
+        background: var(--input-bg); 
+        padding: 15px; 
+        border-radius: 12px; 
+        margin-bottom: 12px; 
+        display: flex; 
+        align-items: flex-start; 
+        position: relative;
+        animation: fadeIn 0.3s ease;
+    }
+    .log-icon { 
+        font-size: 24px; 
+        margin-right: 15px; 
+        background: var(--bg-card); 
+        width: 40px; height: 40px; 
+        display: flex; align-items: center; justify-content: center; 
+        border-radius: 50%; flex-shrink: 0;
+    }
+    .log-content { flex: 1; }
+    .log-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .log-meta { font-size: 12px; color: var(--text-sub); display: flex; align-items: center; gap: 8px; }
+    .log-badge { 
+        background: var(--accent); color: white; 
+        padding: 2px 8px; border-radius: 6px; 
+        font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .log-snippet { 
+        margin-top: 8px; font-size: 14px; color: var(--text-main); 
+        background: rgba(128,128,128,0.1); padding: 8px; border-radius: 8px; font-style: italic;
+    }
+    .log-empty { text-align: center; color: var(--text-sub); margin-top: 50px; }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    
 </style>
 </head>
 <body>
@@ -154,6 +189,7 @@
         <div style="padding: 0 20px 20px 20px; font-weight:bold; font-size:20px; color:var(--text-sub)">Menü</div>
         <div class="menu-item active" onclick="switchTab('send')">✍️ Schreiben</div>
         <div class="menu-item" onclick="switchTab('view')">🛠️Nachrichten bearbeiten</div>
+        <div class="menu-item" onclick="switchTab('log')">📊 Aktivitäten Log</div>
         <div style="flex:1"></div>
         <div class="menu-item" style="font-size:14px; color:var(--text-sub)" onclick="toggleDarkMode()">🌙 Dark Mode umschalten</div>
     </div>
@@ -198,7 +234,17 @@
         </div>
     </div>
 
-
+<!-- TAB: LOG -->
+    <div id="tab-log" class="tab-content">
+        <div style="padding:15px; border-bottom:1px solid var(--input-bg); display:flex; justify-content:space-between; align-items:center; background:var(--bg-card);">
+            <span style="font-size:13px; color:var(--text-sub)" id="logStatus">Bereit</span>
+            <button onclick="loadLogData()" style="background:none; border:none; color:var(--accent); font-weight:bold; cursor:pointer;">↻ Aktualisieren</button>
+        </div>
+        <div class="scroll-area" id="logList">
+            <!-- Hier kommen die Logs rein -->
+            <div class="log-empty">Lade Logs...</div>
+        </div>
+    </div>
 
     
     <!-- SETTINGS -->
@@ -244,7 +290,7 @@
                 Object.assign(conf, json);
                 localStorage.setItem('oma_conf_v2', JSON.stringify(conf));
                 history.replaceState(null, null, window.location.pathname);
-                alert("Einstellungen importiert! 🎉");
+              //  alert("Einstellungen importiert! 🎉");
             } catch(e) { alert("Link fehlerhaft."); }
         }
         document.getElementById('confTopic').value = conf.t || '';
@@ -489,7 +535,7 @@
     }
 
     // Startpunkt (wird beim Tab-Wechsel aufgerufen)
-    function switchTab(tab) {
+function switchTab(tab) {
         activeTab = tab;
         document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
         document.getElementById('tab-' + tab).classList.add('active');
@@ -502,12 +548,14 @@
         if(tab === 'view') {
             document.getElementById('pageTitle').innerText = "Omas Sicht";
             resetViewer();
-            
-            // BEIDES PARALLEL STARTEN
-            // Da wir die Map nutzen, ist es egal, wer schneller ist.
-            // Es gibt keine Race-Conditions mehr.
-            startLiveViewer(); // ntfy
-            loadGithubData();  // GitHub
+            startLiveViewer(); 
+            loadGithubData(); 
+        }
+
+        // NEU: Log Tab Logik
+        if(tab === 'log') {
+            document.getElementById('pageTitle').innerText = "Aktivitäten";
+            loadLogData();
         }
     }
 
@@ -876,6 +924,106 @@
             outputArray[i] = rawData.charCodeAt(i);
         }
         return outputArray;
+    }
+
+    // === 6. LOG VIEW LOGIC ===
+    async function loadLogData() {
+        const list = document.getElementById('logList');
+        const status = document.getElementById('logStatus');
+        
+        status.innerText = "Lade GitHub...";
+        list.innerHTML = '<div class="log-empty">⏳ Lade Daten...</div>';
+        
+        if(!conf.gu || !conf.gr || !conf.gt) {
+            list.innerHTML = '<div class="log-empty">❌ GitHub Config fehlt</div>';
+            return;
+        }
+
+        try {
+            // Wir laden logs.json
+            const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/logs.json?t=${Date.now()}`;
+            const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
+            
+            const resp = await fetch(url, { headers: header, cache: "no-store" });
+            if(resp.status === 404) {
+                list.innerHTML = '<div class="log-empty">📭 Noch keine Logs vorhanden.</div>';
+                status.innerText = "Leer";
+                return;
+            }
+            
+            const fileData = await resp.json();
+            
+            // Content Decode Logic (identisch zu messages)
+            let rawB64 = fileData.content;
+            if (!rawB64 && fileData.sha) {
+                 const blobResp = await fetch(`https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`, { headers: header });
+                 if(blobResp.ok) {
+                     const blobData = await blobResp.json();
+                     rawB64 = blobData.content;
+                 }
+            }
+            if(!rawB64) throw new Error("Kein Inhalt");
+            
+            const cleanB64 = rawB64.replace(/\s/g, '');
+            const logArray = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
+            
+            // UI leeren und neu befüllen
+            list.innerHTML = "";
+            let count = 0;
+
+            // Neueste zuerst (Reverse Loop oder Sort)
+            logArray.sort((a,b) => b.timestamp - a.timestamp);
+
+            for(let item of logArray) {
+                // Entschlüsseln
+                try {
+                    const jsonStr = await decryptText(item.enc, conf.p);
+                    if(!jsonStr) continue; // Skip bei falschem Passwort
+                    
+                    const log = JSON.parse(jsonStr);
+                    // log Format: { type: "read", ts: 12345, dev: "Oma", sender: "Max", snippet: "Hallo..." }
+                    
+                    renderLogItem(list, log, item.timestamp);
+                    count++;
+                } catch(e) { console.warn("Log Decrypt Fail", e); }
+            }
+
+            if(count === 0) list.innerHTML = '<div class="log-empty">📭 Keine lesbaren Logs.</div>';
+            status.innerText = `Stand: ${new Date().toLocaleTimeString()}`;
+
+        } catch(e) {
+            console.error(e);
+            list.innerHTML = `<div class="log-empty">❌ Fehler: ${e.message}</div>`;
+        }
+    }
+
+    function renderLogItem(container, data, serverTs) {
+        // Zeit formatieren
+        const dateObj = new Date(data.ts * 1000);
+        const day = dateObj.toLocaleDateString([], {day:'2-digit', month:'2-digit'});
+        const time = dateObj.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        
+        // Icon basierend auf Device ID (Visual Candy)
+        let icon = "📱";
+        if(data.dev && data.dev.toLowerCase().includes("pc")) icon = "💻";
+        if(data.dev && data.dev.toLowerCase().includes("tablet")) icon = "📟";
+
+        const html = `
+            <div class="log-item">
+                <div class="log-icon">${icon}</div>
+                <div class="log-content">
+                    <div class="log-title">
+                        <span>${data.dev || "Unbekannt"}</span>
+                        <span class="log-badge">Gelesen</span>
+                    </div>
+                    <div class="log-meta">
+                        <span>🕒 ${day} um ${time}</span>
+                    </div>
+                    ${data.snippet ? `<div class="log-snippet">"${data.snippet}..." <br><span style="font-size:10px; opacity:0.7">von ${data.sender||'?'}</span></div>` : ''}
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
     }
     
 </script>
