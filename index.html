@@ -6,6 +6,11 @@
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- Externe Libs für QR & Bildbearbeitung -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Familien Chat</title>
 <style>
@@ -184,7 +189,40 @@
     .btn-tour { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; border: none; }
     .btn-tour-skip { background: transparent; color: var(--text-sub); }
     .btn-tour-next { background: var(--accent); color: white; }
+
+/* === NEW MODALS (QR & CROPPER) === */
+    .modal-fullscreen {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-card); z-index: 2000;
+        display: none; flex-direction: column;
+    }
+    .modal-fullscreen.active { display: flex; }
     
+    .editor-area { flex: 1; background: #000; position: relative; overflow: hidden; }
+    .editor-controls { padding: 15px; background: var(--bg-card); display: flex; gap: 10px; justify-content: center; }
+    
+    .qr-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+    #qrCodeDiv { margin: 20px 0; padding: 10px; background: white; border-radius: 8px; }
+    #qrReader { width: 100%; max-width: 400px; }
+
+    /* WICHTIG: min-height erzwingen, sonst sieht die Library keinen Platz */
+    #qrReader { 
+        width: 100%; 
+        min-height: 300px; 
+        background: #000; 
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    #qrReader { 
+        width: 100%; 
+        min-height: 300px; /* Zwingend nötig für mobilen Chrome */
+        background: #000; 
+        border-radius: 8px;
+        overflow: hidden;
+        position: relative;
+    }
+    /* Versteckt das hässliche "Scan region" overlay der Library, falls es auftaucht */
+    #qrReader__scan_region { display: none !important; }
 </style>
 </head>
 <body>
@@ -288,11 +326,7 @@
             <div class="header-title">Einstellungen</div>
             <button class="btn-icon" onclick="saveConf()">Fertig</button>
         </header>
-        <!-- PUSH TOGGLE -->
-            <div class="setting-row" id="pushRow">
-                <span style="font-size:17px; font-weight:500">🔔 Benachrichtigungen</span>
-                <button onclick="enablePush()" style="background:var(--accent); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold; cursor:pointer">Aktivieren</button>
-            </div>
+        <button class="btn-primary" style="margin-top:20px; background: #5856d6;" onclick="toggleQrModal(true)">📱 QR Code Setup</button>
         <div class="scroll-area">
             <div class="label-small">Kanal Name (ntfy)</div>
             <input id="confTopic" placeholder="oma_geheim">
@@ -325,7 +359,54 @@
             </div>
         </div>
     </div>
-    
+    <!-- EDITOR MODAL -->
+    <div id="editorModal" class="modal-fullscreen">
+        <header class="app-header">
+            <button class="btn-icon" onclick="closeEditor()">Abbrechen</button>
+            <div class="header-title">Bild bearbeiten</div>
+            <button class="btn-icon" onclick="saveEditor()">Fertig</button>
+        </header>
+        <div class="editor-area">
+            <img id="editorImage" style="max-width: 100%;">
+        </div>
+        <div class="editor-controls">
+            <button class="btn-icon" onclick="cropper.rotate(-90)">↺</button>
+            <button class="btn-icon" onclick="cropper.rotate(90)">↻</button>
+            <button class="btn-icon" onclick="cropper.reset()">Reset</button>
+        </div>
+    </div>
+
+    <!-- QR MODAL -->
+    <div id="qrModal" class="modal-fullscreen">
+        <header class="app-header">
+            <button class="btn-icon" onclick="toggleQrModal(false)">Schließen</button>
+            <div class="header-title">Setup teilen / Scannen</div>
+            <div style="width: 40px;"></div>
+        </header>
+        <div class="scroll-area">
+            <!-- TAB WÄHLER -->
+            <div style="display:flex; margin-bottom:20px; background:var(--input-bg); padding:4px; border-radius:10px;">
+                <div style="flex:1; text-align:center; padding:8px; border-radius:8px; background:var(--bg-card); font-weight:bold; cursor:pointer;" onclick="showQrTab('gen')">Zeigen</div>
+                <div style="flex:1; text-align:center; padding:8px; cursor:pointer;" onclick="showQrTab('scan')">Scannen</div>
+            </div>
+
+            <!-- GENERATE VIEW -->
+            <div id="qrGenView" class="qr-container">
+                <div style="font-size:14px; color:var(--text-sub)">Diesen Code mit einem anderen Gerät scannen, um die Einstellungen zu kopieren.</div>
+                <div id="qrCodeDiv"></div>
+                <!-- Im HTML unter dem div id="qrCodeDiv" einfügen -->
+<button class="btn-primary" style="margin-top:10px; font-size:14px;" onclick="copyLink()">Link kopieren 📋</button>
+                <div style="color:var(--danger); font-size:12px; font-weight:bold;">⚠️ Enthält Passwörter! Nicht öffentlich zeigen.</div>
+            </div>
+        
+            
+            <!-- SCAN VIEW -->
+            <div id="qrScanView" class="qr-container" style="display:none">
+                <div id="qrReader"></div>
+                <div id="scanStatus" style="margin-top:10px; font-size:13px;">Kamera Zugriff erlauben...</div>
+            </div>
+        </div>
+    </div>
 <script>
     // --- 1. MAGIC LINK & CONFIG ---
     let conf = { t: '', p: '', gu: '', gr: '', gt: '' };
@@ -349,6 +430,17 @@
         document.getElementById('confGhToken').value = conf.gt || '';
         if (localStorage.getItem('darkmode') === 'true') document.body.classList.add('dark');
     })();
+    // --- DRAFTS ---
+    const draftName = localStorage.getItem('draft_name');
+    const draftMsg = localStorage.getItem('draft_msg');
+    if(draftName) document.getElementById('senderName').value = draftName;
+    if(draftMsg) document.getElementById('msgText').value = draftMsg;
+
+    // Listener hinzufügen
+    document.getElementById('senderName').addEventListener('input', (e) => localStorage.setItem('draft_name', e.target.value));
+    document.getElementById('msgText').addEventListener('input', (e) => localStorage.setItem('draft_msg', e.target.value));
+    
+ 
 
     function saveConf() {
         conf.t = document.getElementById('confTopic').value.trim();
@@ -360,7 +452,12 @@
         toggleSettings(false);
         if(activeTab === 'view') { loadViewerData(); startLiveViewer(); }
     }
-
+function copyLink() {
+        const jsonConf = JSON.stringify(conf);
+        const payload = window.location.href.split('#')[0] + "#config=" + btoa(jsonConf);
+        navigator.clipboard.writeText(payload).then(() => alert("Link kopiert! Sende ihn an das andere Handy."));
+    }
+    
     // --- 2. UI NAVIGATION ---
     let activeTab = 'send';
     function toggleSidebar(open) {
@@ -464,13 +561,16 @@
         });
     }
 
-    async function send() {
+ async function send() {
         if(!conf.t || !conf.p) return alert("Einstellungen prüfen!");
         const name = document.getElementById('senderName').value || "Familie";
         const text = document.getElementById('msgText').value;
         const fileInput = document.getElementById('fileInput').files[0];
         
-        if(!text && !fileInput) return showToast("Leer?");
+        // PRÜFUNG: Gibt es ein bearbeitetes Bild (Blob) oder ein Original (Input)?
+        const hasImage = window.currentUploadBlob || fileInput;
+
+        if(!text && !hasImage) return showToast("Leer?");
 
         const overlay = document.getElementById('progressOverlay');
         const status = document.getElementById('progressStatus');
@@ -484,11 +584,23 @@
             
             let dataToSend = encTitle; 
             
-            if(fileInput) {
-                status.innerText = "Komprimiere..."; bar.style.width='20%';
-                const compressedBlob = await compressImage(fileInput);
+            if(hasImage) {
+                status.innerText = "Verarbeite Bild..."; bar.style.width='20%';
+                
+                let fileBuf;
+                
+                // FALL A: Bild kommt aus dem Editor (ist schon komprimiert/resized)
+                if (window.currentUploadBlob) {
+                    fileBuf = await window.currentUploadBlob.arrayBuffer();
+                } 
+                // FALL B: Bild kommt direkt vom Input (muss noch komprimiert werden)
+                else {
+                    status.innerText = "Komprimiere...";
+                    const compressedBlob = await compressImage(fileInput);
+                    fileBuf = await compressedBlob.arrayBuffer();
+                }
+
                 status.innerText = "Verschlüssele Bild..."; bar.style.width='40%';
-                const fileBuf = await compressedBlob.arrayBuffer();
                 const encFileBuf = await encryptData(fileBuf, conf.p);
                 dataToSend = new Blob([encFileBuf]);
             }
@@ -498,7 +610,7 @@
                 const xhr = new XMLHttpRequest();
                 const url = `https://ntfy.sh/${conf.t}`;
                 
-                if (fileInput) {
+                if (hasImage) {
                     xhr.open('PUT', url);
                     xhr.setRequestHeader('Title', encTitle);
                     xhr.setRequestHeader('Filename', 'secure.bin');
@@ -518,23 +630,84 @@
                 xhr.send(dataToSend);
             });
 
+            // ERFOLG!
             bar.style.width='100%'; status.innerText="Fertig!";
+            
+            // Entwurf NUR bei Erfolg löschen
+            localStorage.removeItem('draft_msg'); 
+            // Name (draft_name) behalten wir absichtlich im Speicher
+
+            // Aufräumen
+            window.currentUploadBlob = null; // Wichtig: Editor-Cache leeren
+            
             setTimeout(() => {
                 overlay.classList.remove('open'); showToast("Sicher gesendet! 🔒");
-                document.getElementById('msgText').value=""; document.getElementById('fileInput').value=""; 
+                document.getElementById('msgText').value=""; 
+                document.getElementById('fileInput').value=""; 
                 document.getElementById('imagePreview').style.display='none';
+                document.getElementById('mediaText').innerText="Foto anhängen"; // Reset Text
             }, 500);
 
         } catch(e) {
             alert("Fehler: " + e); overlay.classList.remove('open');
+            // Hier NICHT den Draft löschen, damit der User es nochmal versuchen kann
         }
     }
 
+// --- IMAGE EDITOR ---
+    let cropper = null;
+    let originalFile = null;
+
     function previewFile() {
-        const f = document.getElementById('fileInput').files[0];
-        const img = document.getElementById('imagePreview');
-        if(f){ img.src = URL.createObjectURL(f); img.style.display='block'; document.getElementById('mediaText').innerText="Ändern"; }
-        else { img.style.display='none'; document.getElementById('mediaText').innerText="Foto anhängen"; }
+        const file = document.getElementById('fileInput').files[0];
+        if(!file) return;
+        originalFile = file;
+
+        // Editor öffnen statt direkt anzeigen
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('editorImage').src = e.target.result;
+            document.getElementById('editorModal').classList.add('active');
+            
+            // Cropper starten
+            if(cropper) cropper.destroy();
+            const image = document.getElementById('editorImage');
+            cropper = new Cropper(image, {
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 1,
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function closeEditor() {
+        document.getElementById('editorModal').classList.remove('active');
+        document.getElementById('fileInput').value = ""; // Reset
+        if(cropper) cropper.destroy();
+    }
+
+    function saveEditor() {
+        if(!cropper) return;
+        // Canvas holen
+        cropper.getCroppedCanvas({ maxWidth: 1200, maxHeight: 1200 }).toBlob((blob) => {
+            // Blob als File "faken" für den existierenden Upload-Prozess
+            // Wir erstellen ein neues File Object
+            const newFile = new File([blob], "edited.jpg", { type: "image/jpeg" });
+            
+            // UI Update (das alte Preview Element)
+            const img = document.getElementById('imagePreview');
+            img.src = URL.createObjectURL(blob);
+            img.style.display = 'block';
+            document.getElementById('mediaText').innerText = "Bild ändern";
+            
+            // Hack: Wir überschreiben die property im Input nicht (security), 
+            // aber wir speichern das Blob global für die send() funktion.
+            window.currentUploadBlob = blob; 
+
+            document.getElementById('editorModal').classList.remove('active');
+            cropper.destroy();
+        }, 'image/jpeg', 0.8);
     }
 
 // --- 5. VIEWER LOGIC (CLEAN VERSION) ---
@@ -609,43 +782,59 @@ function switchTab(tab) {
     }
 
     // QUELLE 1: GitHub (Archiv)
+    // --- SMART CACHING ---
     async function loadGithubData() {
         if(!conf.gu || !conf.gr || !conf.gt) return;
         
         try {
+            // 1. Metadaten holen (sehr klein)
             const url = `https://api.github.com/repos/${conf.gu}/${conf.gr}/contents/messages.json?t=${Date.now()}`;
             const header = { 'Authorization': `Bearer ${conf.gt}`, 'Accept': 'application/vnd.github.v3+json' };
-            const resp = await fetch(url, { headers: header, cache: "no-store" });
+            const resp = await fetch(url, { headers: header });
             
             if(!resp.ok) throw new Error("GitHub Fehler");
             
             const fileData = await resp.json();
-            let rawB64 = fileData.content; 
+            const serverSha = fileData.sha;
+            const localSha = localStorage.getItem('cache_sha_msgs');
             
-            // Fallback für große Dateien (Blob API)
-            if (!rawB64 && fileData.sha) {
-                const blobResp = await fetch(`https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`, { headers: header });
-                if(blobResp.ok) {
-                    const blobData = await blobResp.json();
-                    rawB64 = blobData.content;
-                }
-            }
-            if(!rawB64) return;
+            let rawData = [];
 
-            const cleanB64 = rawB64.replace(/\s/g, ''); 
-            const rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
-            
-            // Verarbeiten
+            // 2. Prüfen: Haben wir das schon?
+            if (serverSha === localSha && localStorage.getItem('cache_content_msgs')) {
+                console.log("⚡ Nutze Cache!");
+                rawData = JSON.parse(localStorage.getItem('cache_content_msgs'));
+            } else {
+                console.log("📥 Lade neu von GitHub...");
+                // Download Content
+                let rawB64 = fileData.content;
+                if (!rawB64 && fileData.sha) {
+                    const blobResp = await fetch(`https://api.github.com/repos/${conf.gu}/${conf.gr}/git/blobs/${fileData.sha}`, { headers: header });
+                    if(blobResp.ok) {
+                        const blobData = await blobResp.json();
+                        rawB64 = blobData.content;
+                    }
+                }
+                if(!rawB64) return;
+
+                const cleanB64 = rawB64.replace(/\s/g, ''); 
+                rawData = JSON.parse(decodeURIComponent(escape(atob(cleanB64))));
+                
+                // Cache updaten
+                try {
+                    localStorage.setItem('cache_sha_msgs', serverSha);
+                    localStorage.setItem('cache_content_msgs', JSON.stringify(rawData));
+                } catch(e) { console.log("Cache voll", e); }
+            }
+
+            // 3. Verarbeiten (wie bisher)
             for(let item of rawData) {
                 if(item.hidden) { viewerHiddenSet.add(item.timestamp); continue; }
                 processAndAdd(item.timestamp, item.enc, item.img);
             }
-        } catch(e) { 
-            console.log("GitHub Load Error (evtl leer):", e); 
-            // Kein UI Fehler anzeigen, vielleicht klappt ja ntfy
-        }
+        } catch(e) { console.log("GitHub Load Error:", e); }
     }
-
+    
     // QUELLE 2: ntfy (Live & Cache)
     function startLiveViewer() {
         if(!conf.t) return;
@@ -1201,6 +1390,104 @@ function switchTab(tab) {
         }
     };
 
+
+// --- QR CODE FIX ---
+    let html5QrCode = null;
+
+    function toggleQrModal(open) {
+        document.getElementById('qrModal').classList.toggle('active', open);
+        
+        if(open) {
+            showQrTab('gen');
+        } else {
+            // Beim Schließen sicher stoppen
+            if(html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                }).catch(err => console.log("Stop Error", err));
+            }
+        }
+    }
+
+    function showQrTab(tab) {
+        document.getElementById('qrGenView').style.display = tab === 'gen' ? 'flex' : 'none';
+        document.getElementById('qrScanView').style.display = tab === 'scan' ? 'flex' : 'none';
+        
+        if(tab === 'gen') {
+            document.getElementById('qrCodeDiv').innerHTML = "";
+            // JSON stringify der config
+            const jsonConf = JSON.stringify(conf);
+            // Wir nutzen window.location.href um die volle URL inkl. https:// zu bekommen
+            // split('#')[0] entfernt alte Hash-Reste
+            const cleanUrl = window.location.href.split('#')[0];
+            const payload = cleanUrl + "#config=" + btoa(jsonConf);
+            
+            new QRCode(document.getElementById("qrCodeDiv"), {
+                text: payload,
+                width: 200, height: 200,
+                correctLevel : QRCode.CorrectLevel.L
+            });
+        } else {
+            // Kurze Pause, damit das DOM (CSS display:flex) fertig gerendert ist
+            setTimeout(startScanner, 300);
+        }
+    }
+
+function startScanner() {
+        // Erstmal aufräumen, falls was läuft
+        if(html5QrCode) {
+            try { html5QrCode.clear(); } catch(e){}
+        }
+
+        html5QrCode = new Html5Qrcode("qrReader");
+        
+        const statusEl = document.getElementById('scanStatus');
+        statusEl.innerText = "Starte Kamera...";
+        statusEl.style.color = "var(--text-sub)";
+
+        // Simpler Config ohne Box-Zwang
+        const config = { 
+            fps: 10, 
+            aspectRatio: 1.0 
+        };
+
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config,
+            (decodedText, decodedResult) => {
+                // SUCCESS
+                if(decodedText.includes("config=")) {
+                    html5QrCode.stop().then(() => {
+                        console.log("Scan:", decodedText);
+                        
+                        // Hash isolieren
+                        const parts = decodedText.split('#');
+                        const hashPart = parts.length > 1 ? '#' + parts[parts.length - 1] : decodedText;
+                        const finalHash = hashPart.startsWith('#') ? hashPart : '#' + hashPart;
+
+                        // Anwenden
+                        window.location.hash = finalHash;
+                        window.location.reload();
+                    }).catch(e => console.error(e));
+                }
+            },
+            (errorMessage) => {
+                // Parsing Fehler ignorieren wir (passiert bei jedem Frame ohne QR)
+            }
+        ).catch(err => {
+            console.error("Camera Error:", err);
+            // Fallback Nachricht für den User
+            statusEl.innerHTML = `
+                <div style="color:var(--danger); font-weight:bold">Kamera konnte nicht starten.</div>
+                <div style="margin-top:10px; font-size:12px">
+                    Bitte nutze deine normale Kamera-App und scanne den Code vom anderen Handy ab.<br>
+                    <br>Fehler: ${err}
+                </div>
+            `;
+        });
+    }
+  
+    
     // Tour initialisieren (ganz am Ende starten)
     tour.init();
     
